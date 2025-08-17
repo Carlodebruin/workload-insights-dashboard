@@ -1,0 +1,7 @@
+{
+  "name": "Workload Insights Dashboard",
+  "description": "A central reporting dashboard for school staff to visualize work activities logged via WhatsApp, providing management with insights into actual vs. perceived workload.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

@@ -1,0 +1,70 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model User {
+  id           String @id @default(cuid())
+  phone_number String @unique
+  name         String
+  role         String
+  activities   Activity[]
+  updates      ActivityUpdate[]
+  assignedActivities Activity[] @relation("AssignedTo")
+
+  @@map("users")
+}
+
+model Category {
+  id         String @id @default(cuid())
+  name       String
+  isSystem   Boolean @default(false)
+  activities Activity[]
+
+  @@map("categories")
+}
+
+model Activity {
+  id           String @id @default(cuid())
+  user_id      String
+  category_id  String
+  subcategory  String
+  location     String
+  timestamp    DateTime @default(now())
+  notes        String?
+  photo_url    String?
+  latitude     Float?
+  longitude    Float?
+  status       String @default("Unassigned")
+  assigned_to_user_id String?
+  assignment_instructions String?
+  resolution_notes String?
+
+  user         User @relation(fields: [user_id], references: [id])
+  category     Category @relation(fields: [category_id], references: [id])
+  assignedTo   User? @relation("AssignedTo", fields: [assigned_to_user_id], references: [id])
+  updates      ActivityUpdate[]
+
+  @@map("activities")
+}
+
+model ActivityUpdate {
+  id          String @id @default(cuid())
+  activity_id String
+  timestamp   DateTime @default(now())
+  notes       String
+  photo_url   String?
+  author_id   String
+
+  activity Activity @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  author   User @relation(fields: [author_id], references: [id])
+
+  @@map("activity_updates")
+}
