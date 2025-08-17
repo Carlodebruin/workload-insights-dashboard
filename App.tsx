@@ -3,9 +3,9 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import Header from './components/Header';
-import AIInsightsPage from './pages/AIInsightsPage';
-import AdminPage from './pages/AdminPage';
-import MapView from './pages/MapView';
+import AIInsightsPage from './page-components/AIInsightsPage';
+import AdminPage from './page-components/AdminPage';
+import MapView from './page-components/MapView';
 import { Category, Activity, NewActivityData, ActivityStatus, User, ActivityUpdate } from './types';
 import { ToastProvider } from './contexts/ToastContext';
 import ToastContainer from './components/ToastContainer';
@@ -30,11 +30,14 @@ type AppData = {
 
 const getInitialFilterState = () => {
     try {
+        if (typeof window === 'undefined') return {};
         const savedFilters = sessionStorage.getItem(FILTERS_STORAGE_KEY);
         if (savedFilters) return JSON.parse(savedFilters);
     } catch (e) {
         console.error("Failed to parse filters from sessionStorage", e);
-        sessionStorage.removeItem(FILTERS_STORAGE_KEY);
+        if (typeof window !== 'undefined') {
+            sessionStorage.removeItem(FILTERS_STORAGE_KEY);
+        }
     }
     return {
         selectedUserId: 'all',
@@ -72,14 +75,16 @@ function AppContent() {
   const [activityForUpdate, setActivityForUpdate] = useState<Activity | null>(null);
 
   // --- Filter State ---
-  const [selectedUserId, setSelectedUserId] = useState<string>(() => getInitialFilterState().selectedUserId);
-  const [selectedCategory, setSelectedCategory] = useState<string>(() => getInitialFilterState().selectedCategory);
-  const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => getInitialFilterState().dateRange);
-  const [searchTerm, setSearchTerm] = useState<string>(() => getInitialFilterState().searchTerm);
+  const [selectedUserId, setSelectedUserId] = useState<string>(() => getInitialFilterState().selectedUserId || 'all');
+  const [selectedCategory, setSelectedCategory] = useState<string>(() => getInitialFilterState().selectedCategory || 'all');
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => getInitialFilterState().dateRange || { start: '', end: '' });
+  const [searchTerm, setSearchTerm] = useState<string>(() => getInitialFilterState().searchTerm || '');
 
   useEffect(() => {
-    const filters = { selectedUserId, selectedCategory, dateRange, searchTerm };
-    sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    if (typeof window !== 'undefined') {
+      const filters = { selectedUserId, selectedCategory, dateRange, searchTerm };
+      sessionStorage.setItem(FILTERS_STORAGE_KEY, JSON.stringify(filters));
+    }
   }, [selectedUserId, selectedCategory, dateRange, searchTerm]);
   
   const categoryOptions = useMemo(() => {
@@ -121,7 +126,7 @@ function AppContent() {
     }
   };
   const handleDeleteActivity = (activityId: string) => {
-    if (window.confirm("Are you sure you want to delete this incident?")) {
+    if (typeof window !== 'undefined' && window.confirm("Are you sure you want to delete this incident?")) {
       deleteActivity(activityId)
         .then(() => addToast('Success', 'The incident has been deleted.', 'success'))
         .catch((error) => { addToast('Error', 'Could not delete the incident.', 'error'); console.error(error); });

@@ -17,7 +17,7 @@ export const useGeolocation = (options: PositionOptions = {}) => {
   const [error, setError] = useState<GeolocationError | null>(null);
 
   useEffect(() => {
-    if (!navigator.geolocation) {
+    if (typeof window === 'undefined' || !navigator.geolocation) {
       setError({ code: 0, message: 'Geolocation is not supported by your browser' });
       return;
     }
@@ -44,7 +44,9 @@ export const useGeolocation = (options: PositionOptions = {}) => {
 
     return () => {
       isMounted = false;
-      navigator.geolocation.clearWatch(watcher);
+      if (typeof window !== 'undefined' && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watcher);
+      }
     };
   }, [options.enableHighAccuracy, options.timeout, options.maximumAge]); // Re-run effect if options change
 

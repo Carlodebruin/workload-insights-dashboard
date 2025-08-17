@@ -45,7 +45,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({
 
   // Apply theme to document
   useEffect(() => {
-    if (!isHydrated) return;
+    if (!isHydrated || typeof window === 'undefined') return;
     
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');

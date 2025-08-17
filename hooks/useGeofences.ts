@@ -33,6 +33,12 @@ export const useGeofences = () => {
 
   useEffect(() => {
     try {
+      if (typeof window === 'undefined') {
+        setGeofences(MOCK_GEOFENCES);
+        setLoading(false);
+        return;
+      }
+
       let storedGeofences: Geofence[] | null = JSON.parse(localStorage.getItem(GEOFENCES_STORAGE_KEY) || 'null');
 
       if (!storedGeofences || storedGeofences.length === 0) {
@@ -44,14 +50,18 @@ export const useGeofences = () => {
     } catch (error) {
       console.error("Failed to load geofences from localStorage, falling back to mocks.", error);
       setGeofences(MOCK_GEOFENCES);
-      localStorage.setItem(GEOFENCES_STORAGE_KEY, JSON.stringify(MOCK_GEOFENCES));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(GEOFENCES_STORAGE_KEY, JSON.stringify(MOCK_GEOFENCES));
+      }
     } finally {
       setLoading(false);
     }
   }, []);
   
   const persistGeofences = (updatedGeofences: Geofence[]) => {
-      localStorage.setItem(GEOFENCES_STORAGE_KEY, JSON.stringify(updatedGeofences));
+      if (typeof window !== 'undefined') {
+        localStorage.setItem(GEOFENCES_STORAGE_KEY, JSON.stringify(updatedGeofences));
+      }
   };
 
   const addGeofence = (geofenceData: NewGeofenceData): Promise<Geofence> => {

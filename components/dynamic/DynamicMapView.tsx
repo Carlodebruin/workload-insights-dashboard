@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic';
 
-const DynamicMapView = dynamic(() => import('../../pages/MapView'), {
+const DynamicMapView = dynamic(() => import('../../page-components/MapView'), {
   ssr: false,
 });
 

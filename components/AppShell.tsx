@@ -3,8 +3,8 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import Dashboard from './Dashboard';
 import Header from './Header';
-import AIInsightsPage from '../pages/AIInsightsPage';
-import AdminPage from '../pages/AdminPage';
+import AIInsightsPage from '../page-components/AIInsightsPage';
+import AdminPage from '../page-components/AdminPage';
 import { Category, Activity, NewActivityData, ActivityStatus, User, ActivityUpdate } from '../types';
 import ToastContainer from './ToastContainer';
 import { useMockData } from '../hooks/useMockData';
@@ -125,7 +125,7 @@ export default function AppShell() {
     }
   };
   const handleDeleteActivity = (activityId: string) => {
-    if (window.confirm("Are you sure you want to delete this incident?")) {
+    if (typeof window !== 'undefined' && window.confirm("Are you sure you want to delete this incident?")) {
       deleteActivity(activityId)
         .then(() => addToast('Success', 'The incident has been deleted.', 'success'))
         .catch((error) => { addToast('Error', 'Could not delete the incident.', 'error'); console.error(error); });
