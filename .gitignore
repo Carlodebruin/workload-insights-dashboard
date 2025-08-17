@@ -1,3 +1,9 @@
 node_modules/
 .env*.local
 .next/
+.DS_Store
+*.db
+*.sqlite
+.vscode/
+.idea/
+*.log
