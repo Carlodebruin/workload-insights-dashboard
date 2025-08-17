@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
+// ... rest of the file
 import { User, Activity, Category } from '../types';
 import { Sparkles, Send, Bot, FileText } from 'lucide-react';
 import { parseDateStringAsLocal } from '../lib/utils';
