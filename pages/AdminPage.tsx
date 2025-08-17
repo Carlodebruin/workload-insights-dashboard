@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
+// ... rest of the file
 import { User, NewUserData, Geofence, NewGeofenceData, Category, NewActivityData, Activity, ActivityStatus } from '../types';
 import { PlusCircle, Edit, Trash2, User as UserIcon, MapPin, Tag } from 'lucide-react';
 import Spinner from '../components/Spinner';
