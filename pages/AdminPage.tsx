@@ -77,8 +77,8 @@ const AdminPage: React.FC<AdminPageProps> = ({
       
       if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete this user? Their activities will be reassigned to the default admin.')) {
           deleteUser(userId)
-            .then(() => addToast('Success', 'User has been deleted.', 'success'))
-            .catch((error: Error) => addToast('Action Prohibited', error.message, 'error'));
+            .then(() => isClient && addToast('Success', 'User has been deleted.', 'success'))
+            .catch((error: Error) => isClient && addToast('Action Prohibited', error.message, 'error'));
       }
   }
 
@@ -96,11 +96,11 @@ const AdminPage: React.FC<AdminPageProps> = ({
 
     promise
         .then(() => {
-            addToast('Success', `User successfully ${isEditing ? 'updated' : 'added'}.`, 'success');
+            isClient && addToast('Success', `User successfully ${isEditing ? 'updated' : 'added'}.`, 'success');
             closeUserModal();
         })
         .catch((error) => {
-            addToast('Error', 'There was a problem saving the user.', 'error');
+            isClient && addToast('Error', 'There was a problem saving the user.', 'error');
             console.error(error);
         });
   };
@@ -111,10 +111,10 @@ const AdminPage: React.FC<AdminPageProps> = ({
       if (!newCategoryName.trim()) return;
       addCategory(newCategoryName.trim())
         .then(() => {
-            addToast('Success', `Category "${newCategoryName}" added.`, 'success');
+            isClient && addToast('Success', `Category "${newCategoryName}" added.`, 'success');
             setNewCategoryName('');
         })
-        .catch((error: Error) => addToast('Error', error.message, 'error'));
+        .catch((error: Error) => isClient && addToast('Error', error.message, 'error'));
   };
 
   const handleDeleteCategory = (category: Category) => {
@@ -122,8 +122,8 @@ const AdminPage: React.FC<AdminPageProps> = ({
       
       if (typeof window !== 'undefined' && window.confirm(`Are you sure you want to delete the "${category.name}" category? All activities under it will be moved to "Unplanned Incident".`)) {
           deleteCategory(category.id)
-            .then(() => addToast('Success', `Category "${category.name}" deleted.`, 'success'))
-            .catch((error: Error) => addToast('Action Prohibited', error.message, 'error'));
+            .then(() => isClient && addToast('Success', `Category "${category.name}" deleted.`, 'success'))
+            .catch((error: Error) => isClient && addToast('Action Prohibited', error.message, 'error'));
       }
   };
 
@@ -145,8 +145,8 @@ const AdminPage: React.FC<AdminPageProps> = ({
       
       if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete this geofence zone?')) {
           deleteGeofence(geofenceId)
-            .then(() => addToast('Success', 'Geofence zone deleted.', 'success'))
-            .catch((err) => addToast('Error', 'Could not delete geofence.', 'error'));
+            .then(() => isClient && addToast('Success', 'Geofence zone deleted.', 'success'))
+            .catch((err) => isClient && addToast('Error', 'Could not delete geofence.', 'error'));
       }
   };
 
@@ -160,20 +160,20 @@ const AdminPage: React.FC<AdminPageProps> = ({
     if (geofenceToEdit) {
         // Editing an existing geofence's name
         updateGeofence(geofenceToEdit.id, { name })
-            .then(() => addToast('Success', 'Geofence updated.', 'success'))
-            .catch((err) => addToast('Error', 'Failed to update geofence.', 'error'));
+            .then(() => isClient && addToast('Success', 'Geofence updated.', 'success'))
+            .catch((err) => isClient && addToast('Error', 'Failed to update geofence.', 'error'));
     } else if (pendingShape) {
         // Creating a new geofence from a drawn shape
         addGeofence({ ...pendingShape, name })
-            .then(() => addToast('Success', 'Geofence created.', 'success'))
-            .catch((err) => addToast('Error', 'Failed to create geofence.', 'error'));
+            .then(() => isClient && addToast('Success', 'Geofence created.', 'success'))
+            .catch((err) => isClient && addToast('Error', 'Failed to create geofence.', 'error'));
     }
   };
 
   // --- WhatsApp Simulator Handler ---
   const handleSimulateMessage = async (data: { userId: string; message: string; photo?: string; audioBlob?: Blob | null; }) => {
     const toastMessage = data.audioBlob ? 'Transcribing and parsing voice note...' : 'Parsing message with AI...';
-    addToast('Info', toastMessage, 'info');
+    isClient && addToast('Info', toastMessage, 'info');
     
     try {
         const parsedData = await parseWhatsAppMessage({
@@ -213,11 +213,11 @@ const AdminPage: React.FC<AdminPageProps> = ({
         };
         
         await addActivity(newActivityData);
-        addToast('Success', `Simulation successful! New "${parsedData.subcategory}" activity created.`, 'success');
+        isClient && addToast('Success', `Simulation successful! New "${parsedData.subcategory}" activity created.`, 'success');
 
     } catch (error) {
         console.error("AI Parsing Error:", error);
-        addToast('Error', 'AI failed to parse the message. Please check the console.', 'error');
+        isClient && addToast('Error', 'AI failed to parse the message. Please check the console.', 'error');
     }
   };
 
