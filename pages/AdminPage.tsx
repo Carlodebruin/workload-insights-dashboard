@@ -75,7 +75,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
   const handleDeleteUser = (userId: string) => {
       if (!isClient) return;
       
-      if (window.confirm('Are you sure you want to delete this user? Their activities will be reassigned to the default admin.')) {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete this user? Their activities will be reassigned to the default admin.')) {
           deleteUser(userId)
             .then(() => addToast('Success', 'User has been deleted.', 'success'))
             .catch((error: Error) => addToast('Action Prohibited', error.message, 'error'));
@@ -120,7 +120,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
   const handleDeleteCategory = (category: Category) => {
       if (!isClient) return;
       
-      if (window.confirm(`Are you sure you want to delete the "${category.name}" category? All activities under it will be moved to "Unplanned Incident".`)) {
+      if (typeof window !== 'undefined' && window.confirm(`Are you sure you want to delete the "${category.name}" category? All activities under it will be moved to "Unplanned Incident".`)) {
           deleteCategory(category.id)
             .then(() => addToast('Success', `Category "${category.name}" deleted.`, 'success'))
             .catch((error: Error) => addToast('Action Prohibited', error.message, 'error'));
@@ -143,7 +143,7 @@ const AdminPage: React.FC<AdminPageProps> = ({
   const handleDeleteGeofence = (geofenceId: string) => {
       if (!isClient) return;
       
-      if (window.confirm('Are you sure you want to delete this geofence zone?')) {
+      if (typeof window !== 'undefined' && window.confirm('Are you sure you want to delete this geofence zone?')) {
           deleteGeofence(geofenceId)
             .then(() => addToast('Success', 'Geofence zone deleted.', 'success'))
             .catch((err) => addToast('Error', 'Could not delete geofence.', 'error'));

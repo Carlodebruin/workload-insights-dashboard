@@ -178,17 +178,19 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
             sdkHistoryRef.current = [];
             setStatusText('Preparing analysis...');
             
-            const cachedSessionRaw = sessionStorage.getItem(sessionCacheKey);
-            if (cachedSessionRaw) {
-                try {
-                    const cachedData: CachedSessionData = JSON.parse(cachedSessionRaw);
-                    setMessages(cachedData.messages);
-                    setSuggestions(cachedData.suggestions);
-                    sdkHistoryRef.current = cachedData.sdkHistory;
-                    setIsGeneratingSummary(false);
-                    return;
-                } catch (e) {
-                    sessionStorage.removeItem(sessionCacheKey);
+            if (typeof window !== 'undefined') {
+                const cachedSessionRaw = sessionStorage.getItem(sessionCacheKey);
+                if (cachedSessionRaw) {
+                    try {
+                        const cachedData: CachedSessionData = JSON.parse(cachedSessionRaw);
+                        setMessages(cachedData.messages);
+                        setSuggestions(cachedData.suggestions);
+                        sdkHistoryRef.current = cachedData.sdkHistory;
+                        setIsGeneratingSummary(false);
+                        return;
+                    } catch (e) {
+                        sessionStorage.removeItem(sessionCacheKey);
+                    }
                 }
             }
 
@@ -221,11 +223,13 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
                 setMessages(uiMessages);
                 setSuggestions(newSuggestions);
                 
-                sessionStorage.setItem(sessionCacheKey, JSON.stringify({
-                    messages: uiMessages,
-                    suggestions: newSuggestions,
-                    sdkHistory: history
-                }));
+                if (typeof window !== 'undefined') {
+                    sessionStorage.setItem(sessionCacheKey, JSON.stringify({
+                        messages: uiMessages,
+                        suggestions: newSuggestions,
+                        sdkHistory: history
+                    }));
+                }
 
             } catch (e) {
                 const errorMsg = 'Sorry, I had trouble generating an initial summary. Please try adjusting your filters or reloading.';
