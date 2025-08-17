@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useCallback } from 'react';
 // ... rest of the file
 import { User, Activity, Category } from '../types';
 import { Sparkles, Send, Bot, FileText } from 'lucide-react';
@@ -54,7 +54,12 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
     activities,
     loading,
 }) => {
-    const { addToast } = useToast();
+    const toastContext = useToast();
+    const addToast = useCallback((title: string, description: string, variant: 'success' | 'error' | 'info' | 'warning') => {
+        if (typeof window !== 'undefined') {
+            toastContext.addToast(title, description, variant);
+        }
+    }, [toastContext]);
     const [messages, setMessages] = useState<Message[]>([]);
     const [userInput, setUserInput] = useState<string>('');
     const [isReplying, setIsReplying] = useState<boolean>(false);
