@@ -61,3 +61,52 @@ export interface Geofence {
 }
 
 export type NewGeofenceData = Omit<Geofence, 'id'>;
+
+// LLM Provider Types
+export type LLMProvider = 'claude' | 'deepseek' | 'kimi' | 'gemini' | 'openai' | 'azure-openai';
+
+export interface LLMConfiguration {
+  id: string;
+  provider: LLMProvider;
+  name: string; // Display name
+  model?: string; // Specific model name
+  apiKeyId?: string; // Reference to encrypted API key
+  baseUrl?: string; // For custom endpoints
+  isActive: boolean;
+  isDefault: boolean;
+  configuration: {
+    temperature?: number;
+    maxTokens?: number;
+    topP?: number;
+    // Provider-specific settings
+    [key: string]: any;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type NewLLMConfiguration = Omit<LLMConfiguration, 'id' | 'createdAt' | 'updatedAt' | 'apiKeyId'> & {
+  apiKey: string; // Plain text key for creation
+};
+
+export interface LLMProviderInfo {
+  provider: LLMProvider;
+  name: string;
+  description: string;
+  defaultModel?: string;
+  supportedModels: string[];
+  requiresApiKey: boolean;
+  requiresBaseUrl: boolean;
+  configurationFields: {
+    key: string;
+    label: string;
+    type: 'text' | 'number' | 'select' | 'boolean';
+    required?: boolean;
+    options?: string[]; // For select type
+    min?: number; // For number type
+    max?: number; // For number type
+    step?: number; // For number type
+    placeholder?: string;
+    description?: string;
+  }[];
+}

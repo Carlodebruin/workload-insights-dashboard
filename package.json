@@ -7,7 +7,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "db:seed": "prisma db seed"
+    "db:seed": "prisma db seed",
+    "compliance:check": "tsx scripts/compliance-check.ts",
+    "compliance:report": "tsx scripts/compliance-check.ts --verbose",
+    "compliance:cleanup": "tsx scripts/compliance-check.ts --cleanup",
+    "compliance:execute": "tsx scripts/compliance-check.ts --cleanup --execute",
+    "test:pii": "tsx tests/pii-redaction.test.ts",
+    "test:pii-strict": "PII_REDACTION_LEVEL=strict tsx tests/pii-redaction.test.ts",
+    "test:pii-minimal": "PII_REDACTION_LEVEL=minimal tsx tests/pii-redaction.test.ts",
+    "test:security": "tsx tests/security.test.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
@@ -15,6 +23,8 @@
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
     "@prisma/client": "^5.16.1",
+    "@upstash/ratelimit": "^2.0.6",
+    "@upstash/redis": "^1.35.3",
     "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4",
     "leaflet-geosearch": "^4.0.0",
@@ -25,7 +35,8 @@
     "react-markdown": "^9.0.1",
     "recharts": "^2.12.7",
     "remark-gfm": "^4.0.0",
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "zod": "^4.0.17"
   },
   "devDependencies": {
     "@types/leaflet": "^1.9.12",

@@ -1,13 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  env: {
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY,
-    CLAUDE_API_KEY: process.env.CLAUDE_API_KEY,
-    DEEPSEEK_API_KEY: process.env.DEEPSEEK_API_KEY,
-    KIMI_API_KEY: process.env.KIMI_API_KEY,
-  },
   experimental: {
     serverComponentsExternalPackages: ['@prisma/client'],
+    serverActions: {
+      bodySizeLimit: '1mb', // Limit request body size to prevent DoS
+    },
   },
   webpack: (config, { isServer }) => {
     if (!isServer) {
@@ -20,6 +17,36 @@ const nextConfig = {
   },
   output: 'standalone',
   trailingSlash: true,
+  // Security headers for additional protection
+  async headers() {
+    return [
+      {
+        source: '/api/:path*',
+        headers: [
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'Content-Security-Policy',
+            value: "default-src 'self'; frame-ancestors 'none';",
+          },
+        ],
+      },
+    ];
+  },
 };
 
 module.exports = nextConfig;

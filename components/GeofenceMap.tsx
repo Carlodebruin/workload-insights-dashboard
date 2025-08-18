@@ -75,8 +75,8 @@ const GeofenceMap: React.FC<GeofenceMapProps> = ({
           });
           mapRef.current.addControl(searchControl);
 
-          // Initialize layers
-          geofenceLayerRef.current = L.layerGroup().addTo(mapRef.current);
+          // Initialize layers - use FeatureGroup for leaflet-draw compatibility
+          geofenceLayerRef.current = L.featureGroup().addTo(mapRef.current);
 
           // Setup drawing controls if create callback is provided
           if (onGeofenceCreate) {

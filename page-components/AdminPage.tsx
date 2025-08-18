@@ -8,8 +8,10 @@ import Spinner from '../components/Spinner';
 import UserFormModal from '../components/UserFormModal';
 import { useToast } from '../hooks/useToast';
 import { useGeofences } from '../hooks/useGeofences';
+import { useLLMConfigurations } from '../hooks/useLLMConfigurations';
 import GeofenceFormModal from '../components/GeofenceFormModal';
 import WhatsAppSimulator from '../components/WhatsAppSimulator';
+import LLMProviderManagement from '../components/LLMProviderManagement';
 import { parseWhatsAppMessage } from '../lib/ai-parser';
 import DynamicGeofenceMap from '../components/dynamic/DynamicGeofenceMap';
 
@@ -47,12 +49,22 @@ const AdminPage: React.FC<AdminPageProps> = ({
 
   // Geofence Management Hooks & State
   const { geofences, addGeofence, updateGeofence, deleteGeofence, loading: geofencesLoading } = useGeofences();
+  
+  // LLM Configuration Management Hooks & State
+  const { 
+    llmConfigurations, 
+    addConfiguration, 
+    updateConfiguration, 
+    deleteConfiguration, 
+    testConfiguration, 
+    loading: llmLoading 
+  } = useLLMConfigurations();
   const [isGeofenceModalOpen, setIsGeofenceModalOpen] = useState(false);
   const [geofenceToEdit, setGeofenceToEdit] = useState<Geofence | null>(null);
   const [pendingShape, setPendingShape] = useState<NewGeofenceData | null>(null);
   
   const { addToast } = useToast();
-  const loading = dataLoading || geofencesLoading;
+  const loading = dataLoading || geofencesLoading || llmLoading;
 
   // Client-side only initialization
   useEffect(() => {
@@ -375,6 +387,20 @@ const AdminPage: React.FC<AdminPageProps> = ({
         </div>
       </div>
       
+      <hr className="border-border" />
+
+      {/* --- LLM Provider Management Section --- */}
+      <div className="space-y-6">
+        <LLMProviderManagement
+          llmConfigurations={llmConfigurations}
+          onAddConfiguration={addConfiguration}
+          onUpdateConfiguration={updateConfiguration}
+          onDeleteConfiguration={deleteConfiguration}
+          onTestConfiguration={testConfiguration}
+          dataLoading={loading}
+        />
+      </div>
+
       <hr className="border-border" />
 
       {/* --- Developer Tools Section --- */}

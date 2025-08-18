@@ -7,15 +7,21 @@ type AppData = {
     categories: Category[];
 };
 
+// Authentication headers for API calls
+const getAuthHeaders = () => ({
+  'Authorization': 'Bearer demo-admin-token',
+  'Content-Type': 'application/json'
+});
+
 export const useMockData = (
     data: AppData,
     setData: React.Dispatch<React.SetStateAction<AppData>>
 ) => {
 
   const addActivity = async (activityData: NewActivityData): Promise<Activity> => {
-    const response = await fetch('/api/activities', {
+    const response = await fetch('/api/activities/', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(activityData),
     });
     if (!response.ok) throw new Error('Failed to create activity');
@@ -27,7 +33,7 @@ export const useMockData = (
   const updateActivity = async (activityId: string, updatedData: NewActivityData): Promise<Activity> => {
     const response = await fetch(`/api/activities/${activityId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ type: 'full_update', payload: updatedData }),
     });
     if (!response.ok) throw new Error('Failed to update activity');
@@ -40,7 +46,10 @@ export const useMockData = (
   };
   
   const deleteActivity = async (activityId: string): Promise<void> => {
-    const response = await fetch(`/api/activities/${activityId}`, { method: 'DELETE' });
+    const response = await fetch(`/api/activities/${activityId}`, { 
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
     if (!response.ok) throw new Error('Failed to delete activity');
     setData(prev => ({ ...prev, activities: prev.activities.filter(a => a.id !== activityId) }));
   };
@@ -51,7 +60,7 @@ export const useMockData = (
   ): Promise<Activity> => {
     const response = await fetch(`/api/activities/${activityId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ type: 'status_update', payload }),
     });
     if (!response.ok) throw new Error('Failed to update task status');
@@ -69,7 +78,7 @@ export const useMockData = (
   ): Promise<Activity> => {
     const response = await fetch(`/api/activities/${activityId}/updates`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(updateData),
     });
     if (!response.ok) throw new Error('Failed to add update');
@@ -82,9 +91,9 @@ export const useMockData = (
   };
 
   const addUser = async (userData: NewUserData): Promise<User> => {
-    const response = await fetch('/api/users', {
+    const response = await fetch('/api/users/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(userData),
     });
     if (!response.ok) throw new Error('Failed to add user');
@@ -96,7 +105,7 @@ export const useMockData = (
   const updateUser = async (userId: string, updatedData: Partial<NewUserData>): Promise<User> => {
     const response = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(updatedData),
     });
     if (!response.ok) throw new Error('Failed to update user');
@@ -106,7 +115,7 @@ export const useMockData = (
   };
 
   const deleteUser = async (userId: string): Promise<void> => {
-    const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
+    const response = await fetch(`/api/users/${userId}`, { method: 'DELETE', headers: getAuthHeaders() });
     if (!response.ok) {
         const { error } = await response.json();
         throw new Error(error || 'Failed to delete user');
@@ -123,9 +132,9 @@ export const useMockData = (
   };
   
   const addCategory = async (name: string): Promise<Category> => {
-    const response = await fetch('/api/categories', {
+    const response = await fetch('/api/categories/', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify({ name }),
     });
     if (!response.ok) {
@@ -138,7 +147,7 @@ export const useMockData = (
   };
 
   const deleteCategory = async (categoryId: string): Promise<void> => {
-    const response = await fetch(`/api/categories/${categoryId}`, { method: 'DELETE' });
+    const response = await fetch(`/api/categories/${categoryId}`, { method: 'DELETE', headers: getAuthHeaders() });
     if (!response.ok) {
         const { error } = await response.json();
         throw new Error(error || 'Failed to delete category');
