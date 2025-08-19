@@ -54,13 +54,15 @@ export class WhatsAppTemplateManager {
       }
 
       logSecureInfo('Default WhatsApp templates initialized', {
-        operation: 'initialize_templates'
+        operation: 'initialize_templates',
+        timestamp: new Date().toISOString()
       }, {
         templateCount: defaultTemplates.length
       });
     } catch (error) {
       logSecureError('Failed to initialize default templates', {
-        operation: 'initialize_templates'
+        operation: 'initialize_templates',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
     }
   }
@@ -323,7 +325,8 @@ export class WhatsAppTemplateManager {
       });
 
       logSecureInfo('WhatsApp template created/updated', {
-        operation: 'create_template'
+        operation: 'create_template',
+        timestamp: new Date().toISOString()
       }, {
         templateName: template.name,
         templateId: storedTemplate.id,
@@ -337,7 +340,8 @@ export class WhatsAppTemplateManager {
       };
     } catch (error) {
       logSecureError('Failed to create/update template', {
-        operation: 'create_template'
+        operation: 'create_template',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -369,7 +373,8 @@ export class WhatsAppTemplateManager {
       }));
     } catch (error) {
       logSecureError('Failed to get approved templates', {
-        operation: 'get_templates'
+        operation: 'get_templates',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return [];
@@ -399,7 +404,8 @@ export class WhatsAppTemplateManager {
       };
     } catch (error) {
       logSecureError('Failed to get template', {
-        operation: 'get_template'
+        operation: 'get_template',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return null;
@@ -526,7 +532,8 @@ export class WhatsAppTemplateManager {
       return analytics;
     } catch (error) {
       logSecureError('Failed to get template analytics', {
-        operation: 'get_template_analytics'
+        operation: 'get_template_analytics',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return [];
@@ -543,7 +550,8 @@ export class WhatsAppTemplateManager {
       });
 
       logSecureInfo('WhatsApp template deleted', {
-        operation: 'delete_template'
+        operation: 'delete_template',
+        timestamp: new Date().toISOString()
       }, {
         templateId
       });
@@ -551,7 +559,8 @@ export class WhatsAppTemplateManager {
       return { success: true };
     } catch (error) {
       logSecureError('Failed to delete template', {
-        operation: 'delete_template'
+        operation: 'delete_template',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -586,7 +595,8 @@ export class WhatsAppTemplateManager {
       }));
     } catch (error) {
       logSecureError('Failed to get templates by category', {
-        operation: 'get_templates_by_category'
+        operation: 'get_templates_by_category',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return [];

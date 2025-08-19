@@ -16,7 +16,7 @@ interface RouteParams {
 /**
  * DELETE - Unlink WhatsApp user from system user
  */
-export const DELETE = withAuth(async (request: NextRequest, { params }: RouteParams) => {
+export const DELETE = withAuth(async (request: NextRequest, user: any, { params }: RouteParams) => {
   const requestContext = createRequestContext('unlink_whatsapp_user', 'DELETE');
   const whatsappUserId = params.id;
   

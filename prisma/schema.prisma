@@ -98,3 +98,147 @@ model ActivityUpdate {
   @@index([author_id, timestamp], name: "idx_update_author_time")
   @@map("activity_updates")
 }
+
+// Encrypted API key storage
+model ApiKey {
+  id          String @id @default(cuid())
+  keyId       String @unique // Reference ID for the key
+  encryptedKey String       // AES encrypted API key
+  provider    String       // LLM provider name
+  description String?      // Optional description
+  isActive    Boolean @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  llmConfigurations LlmConfiguration[]
+
+  // Indexes for performance
+  @@index([keyId], name: "idx_apikey_keyid")
+  @@index([provider], name: "idx_apikey_provider")
+  @@index([isActive], name: "idx_apikey_active")
+  @@map("api_keys")
+}
+
+// LLM provider configurations
+model LlmConfiguration {
+  id           String @id @default(cuid())
+  provider     String // claude, deepseek, kimi, gemini, etc.
+  name         String // Display name
+  model        String? // Specific model name
+  apiKeyId     String? // Reference to ApiKey
+  baseUrl      String? // Custom endpoint URL
+  isActive     Boolean @default(true)
+  isDefault    Boolean @default(false)
+  configuration String  // JSON string of provider-specific settings
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [keyId])
+
+  // Indexes for performance
+  @@index([provider], name: "idx_llm_provider")
+  @@index([isActive], name: "idx_llm_active")
+  @@index([isDefault], name: "idx_llm_default")
+  @@index([apiKeyId], name: "idx_llm_apikey")
+  // Composite indexes
+  @@index([provider, isActive], name: "idx_llm_provider_active")
+  @@map("llm_configurations")
+}
+
+// WhatsApp Business API Models
+model WhatsAppUser {
+  id              String @id @default(cuid())
+  phoneNumber     String @unique
+  displayName     String?
+  profileName     String?
+  isVerified      Boolean @default(false)
+  linkedUserId    String? // Link to User model
+  isBlocked       Boolean @default(false)
+  lastMessageAt   DateTime?
+  messagesInWindow Int @default(0)
+  windowStartTime DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  linkedUser   User? @relation(fields: [linkedUserId], references: [id])
+  messages     WhatsAppMessage[]
+
+  // Indexes
+  @@index([phoneNumber], name: "idx_wa_user_phone")
+  @@index([linkedUserId], name: "idx_wa_user_linked")
+  @@index([isVerified], name: "idx_wa_user_verified")
+  @@index([lastMessageAt], name: "idx_wa_user_last_message")
+  @@map("whatsapp_users")
+}
+
+model WhatsAppMessage {
+  id                String @id @default(cuid())
+  waId              String @unique // WhatsApp message ID
+  from              String // Phone number
+  to                String // Business phone number
+  type              String // text, image, voice, location, etc.
+  content           String // JSON content based on type
+  timestamp         DateTime
+  direction         String // inbound, outbound
+  status            String @default("sent") // sent, delivered, read, failed
+  isFreeMessage     Boolean @default(false)
+  context           String? // JSON reply context
+  relatedActivityId String?
+  processed         Boolean @default(false)
+  processingError   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  whatsappUser     WhatsAppUser @relation(fields: [from], references: [phoneNumber])
+  relatedActivity  Activity? @relation(fields: [relatedActivityId], references: [id])
+
+  // Indexes
+  @@index([from], name: "idx_wa_message_from")
+  @@index([to], name: "idx_wa_message_to")
+  @@index([timestamp], name: "idx_wa_message_timestamp")
+  @@index([direction], name: "idx_wa_message_direction")
+  @@index([status], name: "idx_wa_message_status")
+  @@index([processed], name: "idx_wa_message_processed")
+  @@index([relatedActivityId], name: "idx_wa_message_activity")
+  @@index([isFreeMessage], name: "idx_wa_message_free")
+  // Composite indexes
+  @@index([from, timestamp], name: "idx_wa_message_from_time")
+  @@index([direction, timestamp], name: "idx_wa_message_dir_time")
+  @@map("whatsapp_messages")
+}
+
+model WhatsAppTemplate {
+  id         String @id @default(cuid())
+  name       String @unique
+  language   String
+  category   String // utility, marketing, authentication
+  status     String @default("pending") // approved, pending, rejected
+  components String // JSON array of template components
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  // Indexes
+  @@index([name], name: "idx_wa_template_name")
+  @@index([status], name: "idx_wa_template_status")
+  @@index([category], name: "idx_wa_template_category")
+  @@map("whatsapp_templates")
+}
+
+model WhatsAppConfig {
+  id                  String @id @default(cuid())
+  key                 String @unique
+  value               String // Encrypted sensitive values
+  description         String?
+  isActive            Boolean @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Indexes
+  @@index([key], name: "idx_wa_config_key")
+  @@index([isActive], name: "idx_wa_config_active")
+  @@map("whatsapp_config")
+}

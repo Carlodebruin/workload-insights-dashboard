@@ -124,7 +124,8 @@ export class WhatsAppMessagingService {
       }
 
       logSecureInfo('WhatsApp message sent successfully', {
-        operation: 'send_message'
+        operation: 'send_message',
+        timestamp: new Date().toISOString()
       }, {
         messageId,
         recipient: this.maskPhoneNumber(options.to),
@@ -142,7 +143,8 @@ export class WhatsAppMessagingService {
 
     } catch (error) {
       logSecureError('Failed to send WhatsApp message', {
-        operation: 'send_message'
+        operation: 'send_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -178,7 +180,8 @@ export class WhatsAppMessagingService {
     // Check cost limits
     if (options.maxCost && optimization.estimatedCost > options.maxCost) {
       logSecureWarning('Bulk message cost exceeds limit', {
-        operation: 'bulk_send'
+        operation: 'bulk_send',
+        timestamp: new Date().toISOString()
       }, {
         estimatedCost: optimization.estimatedCost,
         maxCost: options.maxCost,
@@ -245,7 +248,8 @@ export class WhatsAppMessagingService {
     }
 
     logSecureInfo('Bulk WhatsApp messages processed', {
-      operation: 'bulk_send'
+      operation: 'bulk_send',
+        timestamp: new Date().toISOString()
     }, {
       totalRecipients: options.recipients.length,
       sentImmediately,
@@ -317,7 +321,8 @@ export class WhatsAppMessagingService {
       };
     } catch (error) {
       logSecureError('Failed to send quick response', {
-        operation: 'quick_response'
+        operation: 'quick_response',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -338,7 +343,8 @@ export class WhatsAppMessagingService {
       // For high priority messages, send anyway but log cost
       if (options.priority === 'high') {
         logSecureWarning('Sending high priority message outside free window', {
-          operation: 'paid_message'
+          operation: 'paid_message',
+        timestamp: new Date().toISOString()
         }, {
           recipient: this.maskPhoneNumber(options.to),
           estimatedCost: optimization.estimatedCost,
@@ -367,7 +373,8 @@ export class WhatsAppMessagingService {
     const scheduledTime = new Date(Date.now() + (2 * 60 * 60 * 1000)); // 2 hours later
     
     logSecureInfo('Message scheduled for optimal delivery', {
-      operation: 'schedule_message'
+      operation: 'schedule_message',
+        timestamp: new Date().toISOString()
     }, {
       recipient: this.maskPhoneNumber(to),
       scheduledTime: scheduledTime.toISOString()
@@ -462,7 +469,8 @@ export class WhatsAppMessagingService {
       });
     } catch (error) {
       logSecureError('Failed to store outbound message', {
-        operation: 'store_message'
+        operation: 'store_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
     }
   }
@@ -496,7 +504,8 @@ export class WhatsAppMessagingService {
       };
     } catch (error) {
       logSecureError('Failed to get window tracker', {
-        operation: 'get_window_tracker'
+        operation: 'get_window_tracker',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -541,7 +550,8 @@ export class WhatsAppMessagingService {
       });
     } catch (error) {
       logSecureError('Failed to update window tracker', {
-        operation: 'update_window_tracker'
+        operation: 'update_window_tracker',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
     }
   }

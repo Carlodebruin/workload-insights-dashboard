@@ -357,7 +357,8 @@ export class WhatsAppCommandSystem {
       );
 
       logSecureInfo('Incident report created via WhatsApp command', {
-        operation: 'command_report'
+        operation: 'command_report',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: context.linkedUser.id,
@@ -367,7 +368,8 @@ export class WhatsAppCommandSystem {
 
     } catch (error) {
       logSecureError('Failed to create report via command', {
-        operation: 'command_report'
+        operation: 'command_report',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       await whatsappMessaging.sendQuickResponse(
@@ -524,7 +526,8 @@ export class WhatsAppCommandSystem {
       );
 
       logSecureInfo('Incident completed via WhatsApp command', {
-        operation: 'command_complete'
+        operation: 'command_complete',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         completedBy: context.linkedUser.id,
@@ -533,7 +536,8 @@ export class WhatsAppCommandSystem {
 
     } catch (error) {
       logSecureError('Failed to complete incident via command', {
-        operation: 'command_complete'
+        operation: 'command_complete',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       await whatsappMessaging.sendQuickResponse(
@@ -609,7 +613,8 @@ export class WhatsAppCommandSystem {
 
     } catch (error) {
       logSecureError('Failed to assign incident via command', {
-        operation: 'command_assign'
+        operation: 'command_assign',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       await whatsappMessaging.sendQuickResponse(
@@ -662,7 +667,8 @@ export class WhatsAppCommandSystem {
 
     } catch (error) {
       logSecureError('Failed to get stats via command', {
-        operation: 'command_stats'
+        operation: 'command_stats',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       await whatsappMessaging.sendQuickResponse(

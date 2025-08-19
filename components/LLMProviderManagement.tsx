@@ -60,7 +60,9 @@ const LLMProviderManagement: React.FC<LLMProviderManagementProps> = ({
         baseUrl: editingConfig.baseUrl,
         isActive: editingConfig.isActive,
         isDefault: editingConfig.isDefault,
-        configuration: JSON.parse(editingConfig.configuration || '{}'),
+        configuration: typeof editingConfig.configuration === 'string' 
+          ? JSON.parse(editingConfig.configuration || '{}')
+          : editingConfig.configuration || {},
         apiKey: '' // Never pre-populate API key for security
       });
       setSelectedProvider(editingConfig.provider as LLMProvider);
@@ -127,7 +129,7 @@ const LLMProviderManagement: React.FC<LLMProviderManagementProps> = ({
           baseUrl: formData.baseUrl,
           isActive: formData.isActive,
           isDefault: formData.isDefault,
-          configuration: JSON.stringify(formData.configuration)
+          configuration: formData.configuration
         };
         
         await onUpdateConfiguration(editingConfig.id, updateData);

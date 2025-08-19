@@ -14,7 +14,7 @@ const updateLlmConfigurationSchema = z.object({
   baseUrl: z.string().url().optional(),
   isActive: z.boolean().optional(),
   isDefault: z.boolean().optional(),
-  configuration: z.record(z.any()).optional(),
+  configuration: z.record(z.string(), z.any()).optional(),
   apiKey: z.string().optional() // Optional for updates
 });
 
@@ -56,7 +56,8 @@ export const GET = withAuth(async (request: NextRequest, user, { params }: { par
 
     logSecureInfo('LLM configuration fetched successfully', {
       ...requestContext,
-      statusCode: 200,
+      statusCode: 200
+    }, {
       configId: configuration.id
     });
 
@@ -144,8 +145,9 @@ export const PUT = withAuth(async (request: NextRequest, user, { params }: { par
 
         logSecureInfo('API key updated', {
           ...requestContext,
-          configId
+          statusCode: 200
         }, {
+          configId,
           provider,
           keyId: existingConfig.apiKeyId,
           maskedKey: maskApiKey(validatedData.apiKey)
@@ -167,8 +169,9 @@ export const PUT = withAuth(async (request: NextRequest, user, { params }: { par
 
         logSecureInfo('New API key created for configuration', {
           ...requestContext,
-          configId
+          statusCode: 200
         }, {
+          configId,
           provider,
           keyId: apiKeyId,
           maskedKey: maskApiKey(validatedData.apiKey)
@@ -193,7 +196,8 @@ export const PUT = withAuth(async (request: NextRequest, user, { params }: { par
 
     logSecureInfo('LLM configuration updated successfully', {
       ...requestContext,
-      statusCode: 200,
+      statusCode: 200
+    }, {
       configId: configuration.id
     });
 
@@ -254,8 +258,9 @@ export const DELETE = withAuth(async (request: NextRequest, user, { params }: { 
 
       logSecureInfo('Associated API key deleted', {
         ...requestContext,
-        configId
+        statusCode: 200
       }, {
+        configId,
         keyId: existingConfig.apiKeyId,
         provider: existingConfig.provider
       });
@@ -290,9 +295,9 @@ export const DELETE = withAuth(async (request: NextRequest, user, { params }: { 
 
     logSecureInfo('LLM configuration deleted successfully', {
       ...requestContext,
-      statusCode: 200,
-      configId
+      statusCode: 200
     }, {
+      configId,
       name: existingConfig.name,
       provider: existingConfig.provider,
       wasDefault: existingConfig.isDefault

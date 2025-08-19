@@ -15,11 +15,11 @@ const llmConfigurationSchema = z.object({
   baseUrl: z.string().url().optional(),
   isActive: z.boolean().default(true),
   isDefault: z.boolean().default(false),
-  configuration: z.record(z.any()).default({}),
+  configuration: z.record(z.string(), z.any()).default({}),
   apiKey: z.string().min(1, 'API key is required')
 });
 
-const updateLlmConfigurationSchema = llmConfigurationSchema.partial().omit(['apiKey']).extend({
+const updateLlmConfigurationSchema = llmConfigurationSchema.partial().omit({ apiKey: true }).extend({
   apiKey: z.string().optional() // Optional for updates
 });
 
@@ -165,9 +165,9 @@ export const POST = withAuth(async (request: NextRequest) => {
 
     logSecureInfo('LLM configuration created successfully', {
       ...requestContext,
-      statusCode: 201,
-      configId: configuration.id
+      statusCode: 201
     }, {
+      configId: configuration.id,
       provider: validatedData.provider,
       name: validatedData.name,
       hasApiKey: !!apiKeyId

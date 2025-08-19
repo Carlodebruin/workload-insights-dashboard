@@ -16,7 +16,7 @@ interface RouteParams {
 /**
  * GET - Get a specific template by ID or name
  */
-export const GET = withAuth(async (request: NextRequest, { params }: RouteParams) => {
+export const GET = withAuth(async (request: NextRequest, user: any, { params }: RouteParams) => {
   const requestContext = createRequestContext('get_whatsapp_template', 'GET');
   const templateId = params.id;
   
@@ -63,7 +63,7 @@ export const GET = withAuth(async (request: NextRequest, { params }: RouteParams
 /**
  * DELETE - Delete a template
  */
-export const DELETE = withAuth(async (request: NextRequest, { params }: RouteParams) => {
+export const DELETE = withAuth(async (request: NextRequest, user: any, { params }: RouteParams) => {
   const requestContext = createRequestContext('delete_whatsapp_template', 'DELETE');
   const templateId = params.id;
   

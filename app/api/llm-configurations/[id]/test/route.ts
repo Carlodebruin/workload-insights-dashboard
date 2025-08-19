@@ -47,7 +47,6 @@ export const POST = withAuth(async (request: NextRequest, user, { params }: { pa
       } catch (error) {
         logSecureError('Failed to decrypt API key for testing', {
           ...requestContext,
-          configId,
           statusCode: 500
         }, error instanceof Error ? error : undefined);
 
@@ -65,7 +64,6 @@ export const POST = withAuth(async (request: NextRequest, user, { params }: { pa
     } catch (error) {
       logSecureError('Failed to parse configuration JSON', {
         ...requestContext,
-        configId,
         statusCode: 400
       }, error instanceof Error ? error : undefined);
 
@@ -82,20 +80,20 @@ export const POST = withAuth(async (request: NextRequest, user, { params }: { pa
     try {
       switch (configuration.provider) {
         case 'claude':
-          testResult = await testClaudeProvider(apiKey!, config, configuration.baseUrl);
+          testResult = await testClaudeProvider(apiKey!, config, configuration.baseUrl || undefined);
           break;
         case 'openai':
-          testResult = await testOpenAIProvider(apiKey!, config, configuration.baseUrl);
+          testResult = await testOpenAIProvider(apiKey!, config, configuration.baseUrl || undefined);
           break;
         case 'azure-openai':
-          testResult = await testAzureOpenAIProvider(apiKey!, config, configuration.baseUrl);
+          testResult = await testAzureOpenAIProvider(apiKey!, config, configuration.baseUrl || undefined);
           break;
         case 'gemini':
           testResult = await testGeminiProvider(apiKey!, config);
           break;
         case 'deepseek':
         case 'kimi':
-          testResult = await testOpenAICompatibleProvider(apiKey!, config, configuration.baseUrl, configuration.provider);
+          testResult = await testOpenAICompatibleProvider(apiKey!, config, configuration.baseUrl || undefined, configuration.provider);
           break;
         default:
           testResult = { success: false, message: `Provider ${configuration.provider} test not implemented` };
@@ -113,9 +111,9 @@ export const POST = withAuth(async (request: NextRequest, user, { params }: { pa
 
     logSecureInfo('LLM configuration test completed', {
       ...requestContext,
-      statusCode: 200,
-      configId
+      statusCode: 200
     }, {
+      configId,
       provider: configuration.provider,
       success: testResult.success,
       responseTime: testResult.responseTime

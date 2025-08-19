@@ -44,6 +44,8 @@ export class WhatsAppMessageOptimizer {
       } else {
         logSecureWarning('Free message limit reached within window', {
           operation: 'message_optimization',
+          timestamp: new Date().toISOString()
+        }, {
           phoneNumber: this.maskPhoneNumber(phoneNumber)
         });
         
@@ -172,7 +174,8 @@ export class WhatsAppMessageOptimizer {
     });
 
     logSecureInfo('Bulk message optimization completed', {
-      operation: 'bulk_optimization'
+      operation: 'bulk_optimization',
+      timestamp: new Date().toISOString()
     }, {
       totalRecipients: recipients.length,
       sendNow: sendNow.length,

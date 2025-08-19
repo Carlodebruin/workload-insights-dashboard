@@ -11,8 +11,7 @@ import crypto from 'crypto';
  * Handles incoming webhooks from Meta WhatsApp Business API
  */
 
-// Initialize WhatsApp configuration
-whatsappConfig.initialize();
+// WhatsApp configuration will be initialized when first used
 
 /**
  * GET - Webhook verification
@@ -27,6 +26,12 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('hub.verify_token');
     const challenge = searchParams.get('hub.challenge');
 
+    try {
+      whatsappConfig.initialize();
+    } catch (error) {
+      // Configuration not available during build
+      return NextResponse.json({ error: 'WhatsApp not configured' }, { status: 503 });
+    }
     const config = whatsappConfig.getConfig();
 
     // Verify the webhook
@@ -75,6 +80,13 @@ export async function POST(request: NextRequest) {
   const requestContext = createRequestContext('whatsapp_webhook_message', 'POST');
   
   try {
+    try {
+      whatsappConfig.initialize();
+    } catch (error) {
+      // Configuration not available during build
+      return NextResponse.json({ error: 'WhatsApp not configured' }, { status: 503 });
+    }
+
     // Verify webhook signature
     const signature = request.headers.get('x-hub-signature-256');
     if (!verifyWebhookSignature(request, signature)) {
@@ -137,7 +149,8 @@ function verifyWebhookSignature(request: NextRequest, signature: string | null):
     );
   } catch (error) {
     logSecureError('Webhook signature verification failed', {
-      operation: 'verify_signature'
+      operation: 'verify_signature',
+      timestamp: new Date().toISOString()
     }, error instanceof Error ? error : undefined);
     return false;
   }
@@ -163,7 +176,7 @@ async function processMessagesChange(value: any, requestContext: any) {
   // Process incoming messages
   if (messages) {
     for (const message of messages) {
-      await processIncomingMessage(message, contacts, requestContext);
+      await processIncomingMessage(message, contacts, value, requestContext);
     }
   }
 
@@ -181,6 +194,7 @@ async function processMessagesChange(value: any, requestContext: any) {
 async function processIncomingMessage(
   message: WhatsAppInboundMessage,
   contacts: any[],
+  value: any,
   requestContext: any
 ) {
   try {

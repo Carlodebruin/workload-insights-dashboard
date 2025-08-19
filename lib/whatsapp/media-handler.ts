@@ -85,7 +85,8 @@ export class WhatsAppMediaHandler {
       }
     } catch (error) {
       logSecureError('Failed to process media message', {
-        operation: 'process_media_message'
+        operation: 'process_media_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -135,7 +136,8 @@ export class WhatsAppMediaHandler {
       });
 
       logSecureInfo('Incident created from WhatsApp image', {
-        operation: 'create_incident_from_image'
+        operation: 'create_incident_from_image',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: whatsappUser.linkedUser.id,
@@ -150,7 +152,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to process image message', {
-        operation: 'process_image_message'
+        operation: 'process_image_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -200,7 +203,8 @@ export class WhatsAppMediaHandler {
       });
 
       logSecureInfo('Incident created from WhatsApp voice message', {
-        operation: 'create_incident_from_voice'
+        operation: 'create_incident_from_voice',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: whatsappUser.linkedUser.id,
@@ -215,7 +219,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to process audio message', {
-        operation: 'process_audio_message'
+        operation: 'process_audio_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -263,7 +268,8 @@ export class WhatsAppMediaHandler {
       });
 
       logSecureInfo('Incident created from WhatsApp location', {
-        operation: 'create_incident_from_location'
+        operation: 'create_incident_from_location',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: whatsappUser.linkedUser.id,
@@ -279,7 +285,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to process location message', {
-        operation: 'process_location_message'
+        operation: 'process_location_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -329,7 +336,8 @@ export class WhatsAppMediaHandler {
       });
 
       logSecureInfo('Incident created from WhatsApp video', {
-        operation: 'create_incident_from_video'
+        operation: 'create_incident_from_video',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: whatsappUser.linkedUser.id,
@@ -344,7 +352,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to process video message', {
-        operation: 'process_video_message'
+        operation: 'process_video_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -394,7 +403,8 @@ export class WhatsAppMediaHandler {
       });
 
       logSecureInfo('Incident created from WhatsApp document', {
-        operation: 'create_incident_from_document'
+        operation: 'create_incident_from_document',
+        timestamp: new Date().toISOString()
       }, {
         activityId: activity.id,
         userId: whatsappUser.linkedUser.id,
@@ -409,7 +419,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to process document message', {
-        operation: 'process_document_message'
+        operation: 'process_document_message',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -491,7 +502,8 @@ export class WhatsAppMediaHandler {
       };
 
       logSecureInfo('Media file downloaded successfully', {
-        operation: 'download_media'
+        operation: 'download_media',
+        timestamp: new Date().toISOString()
       }, {
         mediaId,
         filename,
@@ -506,7 +518,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to download media', {
-        operation: 'download_media'
+        operation: 'download_media',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -535,7 +548,8 @@ export class WhatsAppMediaHandler {
       };
     } catch (error) {
       logSecureError('Failed to analyze location', {
-        operation: 'analyze_location'
+        operation: 'analyze_location',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return { isValidLocation: false };
@@ -605,7 +619,8 @@ export class WhatsAppMediaHandler {
       return newCategory.id;
     } catch (error) {
       logSecureError('Failed to get default category', {
-        operation: 'get_default_category'
+        operation: 'get_default_category',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       throw new Error('Could not determine category for incident');

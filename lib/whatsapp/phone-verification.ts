@@ -48,7 +48,8 @@ export class WhatsAppPhoneVerification {
         
         if (linkResult.success) {
           logSecureInfo('WhatsApp user linked to existing system user', {
-            operation: 'phone_verification'
+            operation: 'phone_verification',
+        timestamp: new Date().toISOString()
           }, {
             whatsappUserId,
             linkedUserId: existingUser.id,
@@ -93,7 +94,8 @@ export class WhatsAppPhoneVerification {
       await this.sendVerificationCode(phoneNumber, verificationCode);
 
       logSecureInfo('Phone verification initiated', {
-        operation: 'phone_verification'
+        operation: 'phone_verification',
+        timestamp: new Date().toISOString()
       }, {
         verificationId,
         phoneNumber: this.maskPhoneNumber(normalizedPhone),
@@ -108,7 +110,8 @@ export class WhatsAppPhoneVerification {
 
     } catch (error) {
       logSecureError('Failed to initiate phone verification', {
-        operation: 'phone_verification'
+        operation: 'phone_verification',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -158,7 +161,8 @@ export class WhatsAppPhoneVerification {
           await this.cleanupVerification(verificationId);
           
           logSecureWarning('Too many verification attempts', {
-            operation: 'phone_verification'
+            operation: 'phone_verification',
+        timestamp: new Date().toISOString()
           }, {
             verificationId,
             phoneNumber: this.maskPhoneNumber(verificationData.phoneNumber),
@@ -190,7 +194,8 @@ export class WhatsAppPhoneVerification {
       await this.cleanupVerification(verificationId);
 
       logSecureInfo('Phone number verified successfully', {
-        operation: 'phone_verification'
+        operation: 'phone_verification',
+        timestamp: new Date().toISOString()
       }, {
         verificationId,
         phoneNumber: this.maskPhoneNumber(verificationData.phoneNumber),
@@ -201,7 +206,8 @@ export class WhatsAppPhoneVerification {
 
     } catch (error) {
       logSecureError('Failed to verify phone number', {
-        operation: 'phone_verification'
+        operation: 'phone_verification',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -235,7 +241,8 @@ export class WhatsAppPhoneVerification {
       };
     } catch (error) {
       logSecureError('Failed to link WhatsApp user to existing user', {
-        operation: 'user_linking'
+        operation: 'user_linking',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -269,7 +276,8 @@ export class WhatsAppPhoneVerification {
       });
 
       logSecureInfo('New system user created and linked to WhatsApp', {
-        operation: 'user_creation'
+        operation: 'user_creation',
+        timestamp: new Date().toISOString()
       }, {
         newUserId: newUser.id,
         whatsappUserId: verificationData.whatsappUserId,
@@ -283,7 +291,8 @@ export class WhatsAppPhoneVerification {
       };
     } catch (error) {
       logSecureError('Failed to create or link user', {
-        operation: 'user_creation'
+        operation: 'user_creation',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {
@@ -300,7 +309,8 @@ export class WhatsAppPhoneVerification {
     // This will be implemented with the messaging service
     // For now, log the code (in production, this should be sent via WhatsApp)
     logSecureInfo('Verification code generated', {
-      operation: 'send_verification'
+      operation: 'send_verification',
+        timestamp: new Date().toISOString()
     }, {
       phoneNumber: this.maskPhoneNumber(phoneNumber),
       // Don't log the actual code in production
@@ -318,7 +328,8 @@ export class WhatsAppPhoneVerification {
       });
     } catch (error) {
       logSecureError('Failed to cleanup verification data', {
-        operation: 'cleanup_verification'
+        operation: 'cleanup_verification',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
     }
   }
@@ -386,7 +397,8 @@ export class WhatsAppPhoneVerification {
       };
     } catch (error) {
       logSecureError('Failed to get user linking status', {
-        operation: 'get_linking_status'
+        operation: 'get_linking_status',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return { isLinked: false };
@@ -407,13 +419,15 @@ export class WhatsAppPhoneVerification {
       });
 
       logSecureInfo('WhatsApp user unlinked from system user', {
-        operation: 'unlink_user'
+        operation: 'unlink_user',
+        timestamp: new Date().toISOString()
       }, { whatsappUserId });
 
       return { success: true };
     } catch (error) {
       logSecureError('Failed to unlink WhatsApp user', {
-        operation: 'unlink_user'
+        operation: 'unlink_user',
+        timestamp: new Date().toISOString()
       }, error instanceof Error ? error : undefined);
 
       return {

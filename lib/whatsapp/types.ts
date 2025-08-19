@@ -65,6 +65,12 @@ export interface WhatsAppTemplate {
   updatedAt: Date;
 }
 
+export interface WhatsAppTemplateMessage {
+  templateName: string;
+  languageCode: string;
+  parameters?: Array<{ type: 'text' | 'currency' | 'date_time'; text: string }>;
+}
+
 export interface WhatsAppTemplateComponent {
   type: 'header' | 'body' | 'footer' | 'buttons';
   format?: 'text' | 'image' | 'video' | 'document';
