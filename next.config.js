@@ -17,7 +17,7 @@ const nextConfig = {
   },
   // Re-enable for production deployment
   output: 'standalone',
-  // Security headers for additional protection
+  // Security headers for additional protection + CORS for API access
   async headers() {
     return [
       {
@@ -42,6 +42,18 @@ const nextConfig = {
           {
             key: 'Content-Security-Policy',
             value: "default-src 'self'; frame-ancestors 'none';",
+          },
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: '*',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PUT, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization',
           },
         ],
       },
