@@ -118,7 +118,9 @@ export class ApplicationLogger {
   // Start performance tracking for an operation
   public startPerformanceTracking(requestId: string): void {
     this.startTimes.set(requestId, Date.now());
-    this.memorySnapshots.set(requestId, process.memoryUsage().heapUsed);
+    // Use memory tracking only in Node.js runtime, not Edge Runtime
+    const memoryUsage = typeof process !== 'undefined' && process.memoryUsage ? process.memoryUsage().heapUsed : 0;
+    this.memorySnapshots.set(requestId, memoryUsage);
   }
 
   // End performance tracking and get metrics
@@ -131,7 +133,8 @@ export class ApplicationLogger {
     }
 
     const duration = Date.now() - startTime;
-    const memoryAfter = process.memoryUsage().heapUsed;
+    // Use memory tracking only in Node.js runtime, not Edge Runtime
+    const memoryAfter = typeof process !== 'undefined' && process.memoryUsage ? process.memoryUsage().heapUsed : 0;
     
     // Clean up tracking data
     this.startTimes.delete(requestId);

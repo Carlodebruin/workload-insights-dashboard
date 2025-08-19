@@ -169,11 +169,11 @@ function validateEnv(): ValidatedEnv {
         console.error('  3. Restart the development server');
       }
       
-      process.exit(1);
+      throw new Error('Environment variable validation failed. Please check the configuration above.');
     }
     
     console.error('❌ Unexpected error during environment validation:', error);
-    process.exit(1);
+    throw new Error('Unexpected error during environment validation');
   }
 }
 
