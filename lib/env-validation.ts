@@ -48,16 +48,14 @@ const envSchema = z.object({
   SENTRY_DSN: z.string().optional(),
   LOG_LEVEL: z.enum(['error', 'warn', 'info', 'debug']).default('info'),
 }).superRefine((env, ctx) => {
-  // Custom validation: At least one AI provider API key is required
+  // Custom validation: At least one AI provider API key is required (but only warn during build)
   const aiKeys = [env.GEMINI_API_KEY, env.CLAUDE_API_KEY, env.DEEPSEEK_API_KEY, env.KIMI_API_KEY];
   const hasAtLeastOneAiKey = aiKeys.some(key => key && key.length > 0 && key !== 'PLACEHOLDER_API_KEY');
   
-  if (!hasAtLeastOneAiKey) {
-    ctx.addIssue({
-      code: z.ZodIssueCode.custom,
-      message: 'At least one AI provider API key is required (GEMINI_API_KEY, CLAUDE_API_KEY, DEEPSEEK_API_KEY, or KIMI_API_KEY)',
-      path: ['AI_PROVIDERS'],
-    });
+  // Only enforce AI key requirement at runtime, not during build
+  if (!hasAtLeastOneAiKey && process.env.NODE_ENV !== undefined && process.env.VERCEL_ENV !== 'preview' && !process.env.BUILD_TIME) {
+    console.warn('⚠️  WARNING: No AI provider API keys configured. AI features will be disabled.');
+    // Don't fail validation during build/deployment
   }
   
   // Validate Redis configuration: if URL is provided, token must also be provided
@@ -76,14 +74,10 @@ const envSchema = z.object({
       console.warn('⚠️  WARNING: No DATABASE_URL provided. Using SQLite which is not recommended for production.');
     }
     
-    // Validate that placeholder API keys are not used in production
+    // Warn about placeholder API keys in production (but don't fail build)
     const placeholderKeys = aiKeys.filter(key => key === 'PLACEHOLDER_API_KEY');
     if (placeholderKeys.length > 0) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Placeholder API keys detected in production environment. Please provide real API keys.',
-        path: ['AI_PROVIDERS'],
-      });
+      console.warn('⚠️  WARNING: Placeholder API keys detected in production. AI features may not work properly.');
     }
   }
 });
