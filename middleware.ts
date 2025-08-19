@@ -241,11 +241,13 @@ export async function middleware(request: NextRequest) {
     // Skip authentication for public endpoints
     const isHealthEndpoint = request.nextUrl.pathname.startsWith('/api/health');
     const isDataSubjectRightsEndpoint = request.nextUrl.pathname.startsWith('/api/data-subject-rights');
-    const isPublicEndpoint = isHealthEndpoint || isDataSubjectRightsEndpoint;
+    const isWhatsAppWebhookEndpoint = request.nextUrl.pathname === '/api/whatsapp-webhook';
+    const isPublicEndpoint = isHealthEndpoint || isDataSubjectRightsEndpoint || isWhatsAppWebhookEndpoint;
     
     // 1. CSRF Protection - Validate origin/referer for state-changing requests
-    // Public endpoints using GET method are safe from CSRF
-    if (!isPublicEndpoint || STATE_CHANGING_METHODS.includes(request.method)) {
+    // Skip CSRF protection for WhatsApp webhook (Meta servers) and GET requests on public endpoints
+    const shouldSkipCSRF = isWhatsAppWebhookEndpoint || (isPublicEndpoint && !STATE_CHANGING_METHODS.includes(request.method));
+    if (!shouldSkipCSRF) {
       const originValidation = validateOrigin(request);
       if (!originValidation.isValid) {
         return originValidation.error!;
