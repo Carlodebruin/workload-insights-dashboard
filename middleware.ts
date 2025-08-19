@@ -135,11 +135,19 @@ function buildCSP(request: NextRequest): string {
       "'self'",
       `https://${host}`,
       `http://${host}`, // Allow connections to same host
+      'https://localhost:3000',
+      'http://localhost:3000',
+      'https://localhost:3001',
+      'http://localhost:3001', // Development server ports
       'https://api.openai.com', // AI provider endpoints
       'https://api.anthropic.com',
       'https://api.deepseek.com',
       'https://api.moonshot.cn',
       'https://generativelanguage.googleapis.com', // Gemini API
+      'https://nominatim.openstreetmap.org', // OpenStreetMap geocoding
+      'https://tile.openstreetmap.org', // OpenStreetMap tiles
+      'https://*.tile.openstreetmap.org', // Additional tile servers
+      'https://graph.facebook.com', // WhatsApp Business API
       ...(isProduction ? [] : ['ws:', 'wss:']), // WebSocket for development HMR
     ],
     

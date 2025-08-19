@@ -12,6 +12,7 @@ import { useLLMConfigurations } from '../hooks/useLLMConfigurations';
 import GeofenceFormModal from '../components/GeofenceFormModal';
 import WhatsAppSimulator from '../components/WhatsAppSimulator';
 import LLMProviderManagement from '../components/LLMProviderManagement';
+import WhatsAppConfigManagement from '../components/WhatsAppConfigManagement';
 import { parseWhatsAppMessage } from '../lib/ai-parser';
 import DynamicGeofenceMap from '../components/dynamic/DynamicGeofenceMap';
 
@@ -399,6 +400,13 @@ const AdminPage: React.FC<AdminPageProps> = ({
           onTestConfiguration={testConfiguration}
           dataLoading={loading}
         />
+      </div>
+
+      <hr className="border-border" />
+
+      {/* --- WhatsApp Configuration Section --- */}
+      <div className="space-y-6">
+        <WhatsAppConfigManagement dataLoading={loading} />
       </div>
 
       <hr className="border-border" />

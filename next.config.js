@@ -15,8 +15,8 @@ const nextConfig = {
     }
     return config;
   },
+  // Re-enable for production deployment
   output: 'standalone',
-  trailingSlash: true,
   // Security headers for additional protection
   async headers() {
     return [
