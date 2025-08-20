@@ -49,7 +49,7 @@ Vercel Postgres is now only available through the marketplace/integrations. Neon
    - Add these environment variables:
      - `DATABASE_URL` = `postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require`
      - `POSTGRES_PRISMA_URL` = `postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?connect_timeout=15&sslmode=require`
-     - `CLAUDE_API_KEY` = `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`
+     - `CLAUDE_API_KEY` = `[Your Claude API key starting with sk-ant-api03-]`
    - Set environment to "Production, Preview, and Development"
 
 **Note:** The pooled connection (`-pooler.eu-central-1.aws.neon.tech`) is recommended for production as it handles connection limits better.

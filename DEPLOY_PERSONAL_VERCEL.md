@@ -31,7 +31,7 @@ After deployment, set the Claude API key:
 ```bash
 # Set the environment variable via CLI
 vercel env add CLAUDE_API_KEY production
-# When prompted, enter: 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
+# When prompted, enter: [Your Claude API key starting with sk-ant-api03-]
 
 # Also add for development (optional)
 vercel env add CLAUDE_API_KEY development

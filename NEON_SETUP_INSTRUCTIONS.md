@@ -77,7 +77,7 @@ POSTGRES_PRISMA_URL=postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2v
 |------|-------|-------------|
 | `DATABASE_URL` | `postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require` | Production, Preview, Development |
 | `POSTGRES_PRISMA_URL` | `postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?connect_timeout=15&sslmode=require` | Production, Preview, Development |
-| `CLAUDE_API_KEY` | `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` | Production, Preview, Development |
+| `CLAUDE_API_KEY` | `[Your Claude API key starting with sk-ant-api03-]` | Production, Preview, Development |
 
 5. Click **"Save"** for each variable
 
