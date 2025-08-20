@@ -1,5 +1,0 @@
-DATABASE_URL=postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?sslmode=require
-POSTGRES_PRISMA_URL=postgres://neondb_owner:npg_9iyjdECXQIA7@ep-frosty-night-a2vjsg3k-pooler.eu-central-1.aws.neon.tech/neondb?connect_timeout=15&sslmode=require
-CLAUDE_API_KEY=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
-ENCRYPTION_KEY=4de665b9cfdb476d1b90592d83b74d5e4a621d790cce3c2f25de4ffc836e4444
-GEMINI_API_KEY=test_key_for_development_health_check
