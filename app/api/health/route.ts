@@ -182,7 +182,7 @@ export async function GET(request: NextRequest) {
       uptime: Math.floor(process.uptime()),
       responseTime: totalLatency,
       environment: process.env.NODE_ENV || 'unknown',
-      version: process.env.npm_package_version || 'neon-v1.0'
+      version: process.env.npm_package_version || 'neon-v1.1-deployed'
     };
 
     // Construct response
