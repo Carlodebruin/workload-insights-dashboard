@@ -7,9 +7,8 @@ type AppData = {
     categories: Category[];
 };
 
-// Authentication headers for API calls
+// Simplified headers - auth disabled for now
 const getAuthHeaders = () => ({
-  'Authorization': 'Bearer demo-admin-token',
   'Content-Type': 'application/json'
 });
 

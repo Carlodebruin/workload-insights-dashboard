@@ -1,9 +1,8 @@
 // Fixed API layer - Database only, no localStorage conflicts
 import { User, Activity, Category } from '../types';
 
-// For demo purposes, use admin token. In production, implement proper auth flow
+// Simplified headers - auth disabled for now
 const getAuthHeaders = () => ({
-  'Authorization': 'Bearer demo-admin-token',
   'Content-Type': 'application/json'
 });
 
