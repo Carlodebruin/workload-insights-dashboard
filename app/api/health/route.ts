@@ -300,8 +300,8 @@ export async function POST(request: NextRequest) {
         availableAiProviders: envHelpers.getAvailableAiProviders(),
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
       },
-      database: await connectionPool.getMetrics(),
-      configuration: connectionPool.getConfig()
+      database: { type: 'postgresql', connectionTest: await connectionPool.testConnection() },
+      configuration: { simple: true, environment: process.env.NODE_ENV }
     };
 
     logSecureInfo('Detailed health check completed', {
