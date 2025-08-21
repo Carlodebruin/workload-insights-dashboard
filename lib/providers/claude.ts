@@ -7,8 +7,10 @@ export class ClaudeProvider implements AIProvider {
   private baseUrl = 'https://api.anthropic.com/v1';
 
   constructor() {
-    const apiKey = process.env.CLAUDE_API_KEY;
-    if (!apiKey) throw new Error("CLAUDE_API_KEY not configured");
+    const apiKey = process.env.CLAUDE_API_KEY?.trim();
+    if (!apiKey || apiKey === 'test_key_for_development_health_check') {
+      throw new Error("CLAUDE_API_KEY not configured properly. Please set a valid Claude API key in your environment variables.");
+    }
     this.apiKey = apiKey;
   }
 

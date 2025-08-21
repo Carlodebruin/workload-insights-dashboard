@@ -4,12 +4,11 @@ import { decrypt } from '../../../../../lib/encryption';
 import { getProviderInfo } from '../../../../../lib/llm-providers';
 import { validateBody, cuidSchema } from '../../../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext } from '../../../../../lib/secure-logger';
-import { withAuth } from '../../../../../lib/auth-context';
 
 /**
  * Test LLM configuration by making a simple API call
  */
-export const POST = withAuth(async (request: NextRequest, user, { params }: { params: { id: string } }) => {
+export async function POST(request: NextRequest, { params }: { params: { id: string } }) {
   const requestContext = createRequestContext('test_llm_configuration', 'POST');
   
   try {
@@ -133,7 +132,7 @@ export const POST = withAuth(async (request: NextRequest, user, { params }: { pa
       { status: statusCode }
     );
   }
-});
+}
 
 // Provider-specific test functions
 

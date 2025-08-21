@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { prisma } from '../../../lib/prisma';
-import { validateBody, newActivitySchema } from '../../../lib/validation';
+import { validateBody, validateQuery, newActivitySchema, paginationSchema } from '../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext, extractSafeUserId } from '../../../lib/secure-logger';
 import type { Activity, ActivityUpdate } from '@prisma/client';
 
@@ -17,6 +18,124 @@ type SerializedActivityUpdate = {
   photo_url: string | null;
   author_id: string;
 };
+
+export async function GET(request: NextRequest) {
+  let requestContext;
+  
+  try {
+    const { searchParams } = new URL(request.url);
+    
+    // Parse and validate pagination parameters
+    const queryParams = Object.fromEntries(searchParams.entries());
+    const { page, limit } = validateQuery(paginationSchema, queryParams);
+    
+    // Calculate skip value for pagination
+    const skip = (page - 1) * limit;
+
+    // Create secure logging context
+    requestContext = createRequestContext(
+      'fetch_activities',
+      'GET',
+      undefined,
+      undefined,
+      undefined
+    );
+
+    // Fetch activities with pagination
+    const [activities, totalActivities] = await Promise.all([
+      prisma.activity.findMany({
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          user_id: true,
+          category_id: true,
+          subcategory: true,
+          location: true,
+          timestamp: true,
+          notes: true,
+          photo_url: true,
+          latitude: true,
+          longitude: true,
+          status: true,
+          assigned_to_user_id: true,
+          assignment_instructions: true,
+          resolution_notes: true,
+          updates: {
+            select: {
+              id: true,
+              timestamp: true,
+              notes: true,
+              photo_url: true,
+              author_id: true,
+            },
+            orderBy: {
+              timestamp: 'asc',
+            },
+          },
+        },
+        orderBy: {
+          timestamp: 'desc',
+        },
+      }),
+      prisma.activity.count(),
+    ]);
+
+    // Convert Date objects to ISO strings for JSON serialization
+    const serializedActivities = activities.map((activity) => ({
+      ...activity,
+      timestamp: activity.timestamp.toISOString(),
+      updates: activity.updates?.map((update): SerializedActivityUpdate => ({
+        ...update,
+        timestamp: update.timestamp.toISOString(),
+      })) || [],
+    }));
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalActivities / limit);
+    const hasNextPage = page < totalPages;
+    const hasPreviousPage = page > 1;
+
+    const responseData = {
+      activities: serializedActivities,
+      pagination: {
+        currentPage: page,
+        totalPages,
+        totalRecords: totalActivities,
+        pageSize: limit,
+        hasNextPage,
+        hasPreviousPage,
+      },
+    };
+
+    // Log successful operation
+    logSecureInfo('Activities fetched successfully', {
+      ...requestContext,
+      statusCode: 200,
+      count: activities.length,
+    });
+
+    return NextResponse.json(responseData);
+  } catch (error) {
+    const statusCode = error instanceof Error && error.message.includes('validation failed') ? 400 : 500;
+    const message = statusCode === 400 ? (error as Error).message : 'Internal Server Error: Could not fetch activities.';
+    
+    // Secure error logging without PII exposure
+    logSecureError(
+      'Failed to fetch activities',
+      {
+        ...requestContext || createRequestContext('fetch_activities', 'GET'),
+        statusCode,
+      },
+      error instanceof Error ? error : undefined
+    );
+    
+    return NextResponse.json(
+      { error: message },
+      { status: statusCode }
+    );
+  }
+}
 
 export async function POST(request: Request) {
   let requestContext;

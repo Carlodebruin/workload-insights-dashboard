@@ -8,17 +8,32 @@ const getAuthHeaders = () => ({
 
 export const fetchInitialData = async (): Promise<{ users: User[], activities: Activity[], categories: Category[] }> => {
   try {
-    const response = await fetch('/api/data?page=1&limit=50', {
+    console.log('[API] Fetching data from /api/data...');
+    // Fetch all data from /api/data which includes users, categories, and activities
+    const dataResponse = await fetch('/api/data?page=1&limit=50', {
       headers: getAuthHeaders()
     });
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+    console.log('[API] Response status:', dataResponse.status);
+    if (!dataResponse.ok) {
+      throw new Error(`HTTP error! status: ${dataResponse.status}`);
     }
-    const data = await response.json();
-    return data;
+    const data = await dataResponse.json();
+    console.log('[API] Raw response data:', {
+      users: data.users?.length || 0,
+      activities: data.activities?.length || 0,
+      categories: data.categories?.length || 0,
+      fullResponse: data
+    });
+    
+    // Return the extracted data
+    return {
+      users: data.users || [],
+      activities: data.activities || [],
+      categories: data.categories || []
+    };
   } catch (error) {
     console.error('Failed to fetch initial data:', error);
-    // Return minimal fallback data instead of localStorage
+    // Return minimal fallback data
     return {
       users: [],
       activities: [],

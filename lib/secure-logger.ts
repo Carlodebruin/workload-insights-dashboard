@@ -11,6 +11,7 @@ interface LogContext {
   statusCode?: number;
   errorType?: string;
   requestId?: string;
+  count?: number;
 }
 
 // Safe error logging that excludes PII and sensitive data

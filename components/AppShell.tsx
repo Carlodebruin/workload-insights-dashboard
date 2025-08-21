@@ -53,7 +53,13 @@ export default function AppShell() {
   const { addActivity, updateActivity, deleteActivity, updateActivityStatus, addUpdateToActivity, addUser, updateUser, deleteUser, addCategory, deleteCategory } = useMockData(appData, setAppData);
   
   useEffect(() => {
+      console.log('[AppShell] Starting to fetch initial data...');
       fetchInitialData().then(initialData => {
+          console.log('[AppShell] Fetched initial data:', {
+              users: initialData.users?.length || 0,
+              activities: initialData.activities?.length || 0,
+              categories: initialData.categories?.length || 0
+          });
           setAppData(initialData);
           setLoading(false);
       }).catch(err => {

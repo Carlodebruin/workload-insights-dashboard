@@ -4,7 +4,6 @@ import { encrypt, decrypt, generateSecureId, maskApiKey } from '../../../../lib/
 import { validateProviderConfiguration, getProviderInfo } from '../../../../lib/llm-providers';
 import { validateBody, cuidSchema } from '../../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext } from '../../../../lib/secure-logger';
-import { withAuth } from '../../../../lib/auth-context';
 import { z } from 'zod';
 
 const updateLlmConfigurationSchema = z.object({
@@ -18,7 +17,7 @@ const updateLlmConfigurationSchema = z.object({
   apiKey: z.string().optional() // Optional for updates
 });
 
-export const GET = withAuth(async (request: NextRequest, user, { params }: { params: { id: string } }) => {
+export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
   const requestContext = createRequestContext('get_llm_configuration', 'GET');
   
   try {
@@ -75,9 +74,9 @@ export const GET = withAuth(async (request: NextRequest, user, { params }: { par
       { status: statusCode }
     );
   }
-});
+}
 
-export const PUT = withAuth(async (request: NextRequest, user, { params }: { params: { id: string } }) => {
+export async function PUT(request: NextRequest, { params }: { params: { id: string } }) {
   const requestContext = createRequestContext('update_llm_configuration', 'PUT');
   
   try {
@@ -229,9 +228,9 @@ export const PUT = withAuth(async (request: NextRequest, user, { params }: { par
 
     return NextResponse.json({ error: message }, { status: statusCode });
   }
-});
+}
 
-export const DELETE = withAuth(async (request: NextRequest, user, { params }: { params: { id: string } }) => {
+export async function DELETE(request: NextRequest, { params }: { params: { id: string } }) {
   const requestContext = createRequestContext('delete_llm_configuration', 'DELETE');
   
   try {
@@ -317,4 +316,4 @@ export const DELETE = withAuth(async (request: NextRequest, user, { params }: { 
       { status: statusCode }
     );
   }
-});
+}

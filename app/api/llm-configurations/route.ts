@@ -4,7 +4,6 @@ import { encrypt, decrypt, generateSecureId, maskApiKey } from '../../../lib/enc
 import { validateProviderConfiguration, getProviderInfo } from '../../../lib/llm-providers';
 import { validateBody } from '../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext } from '../../../lib/secure-logger';
-import { withAuth } from '../../../lib/auth-context';
 import { z } from 'zod';
 
 // Validation schema for LLM configuration
@@ -23,7 +22,7 @@ const updateLlmConfigurationSchema = llmConfigurationSchema.partial().omit({ api
   apiKey: z.string().optional() // Optional for updates
 });
 
-export const GET = withAuth(async (request: NextRequest) => {
+export async function GET(request: NextRequest) {
   const requestContext = createRequestContext('get_llm_configurations', 'GET');
   
   try {
@@ -73,9 +72,9 @@ export const GET = withAuth(async (request: NextRequest) => {
       { status: 500 }
     );
   }
-});
+}
 
-export const POST = withAuth(async (request: NextRequest) => {
+export async function POST(request: NextRequest) {
   const requestContext = createRequestContext('create_llm_configuration', 'POST');
   
   try {
@@ -201,4 +200,4 @@ export const POST = withAuth(async (request: NextRequest) => {
 
     return NextResponse.json({ error: message }, { status: statusCode });
   }
-});
+}
