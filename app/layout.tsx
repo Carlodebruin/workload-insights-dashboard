@@ -1,7 +1,5 @@
 import "./globals.css";
-import { ThemeProvider } from "../contexts/ThemeContext";
-import { ToastProvider } from "../contexts/ToastContext";
-import { GeofenceProvider } from "../contexts/GeofenceContext";
+import ClientProviders from "../components/ClientProviders";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -22,13 +20,9 @@ export default function RootLayout({
         <link rel="stylesheet" href="https://unpkg.com/leaflet-geosearch@4.0.0/dist/geosearch.css" />
       </head>
       <body className="bg-background text-foreground transition-colors duration-300">
-        <ThemeProvider defaultTheme="dark" storageKey="workload-insights-theme">
-          <ToastProvider>
-            <GeofenceProvider>
-              {children}
-            </GeofenceProvider>
-          </ToastProvider>
-        </ThemeProvider>
+        <ClientProviders>
+          {children}
+        </ClientProviders>
       </body>
     </html>
   );
