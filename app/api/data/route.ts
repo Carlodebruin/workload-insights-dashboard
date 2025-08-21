@@ -47,6 +47,11 @@ type OptimizedActivity = {
 export const dynamic = 'force-dynamic'; // Ensures this route is not cached
 
 export async function GET(request: NextRequest) {
+  console.log('[DEBUG] /api/data endpoint called at:', new Date().toISOString());
+  console.log('[DEBUG] Request URL:', request.url);
+  console.log('[DEBUG] Environment:', process.env.NODE_ENV);
+  console.log('[DEBUG] Database URL exists:', !!process.env.DATABASE_URL);
+  
   // Initialize comprehensive logging
   const logContext = logApiRequest(request, 'get_dashboard_data', {
     searchParams: Object.fromEntries(new URL(request.url).searchParams.entries())
@@ -189,6 +194,19 @@ export async function GET(request: NextRequest) {
         hasPreviousPage,
       },
     };
+
+    // Enhanced debug logging
+    console.log('[DEBUG] Response prepared:', {
+      usersCount: users.length,
+      categoriesCount: categories.length,
+      activitiesCount: serializedActivities.length,
+      totalActivitiesInDB: totalActivities,
+      sampleActivity: serializedActivities[0] ? {
+        id: serializedActivities[0].id,
+        location: serializedActivities[0].location,
+        status: serializedActivities[0].status
+      } : null
+    });
 
     // Log successful response
     const responseSize = JSON.stringify(responseData).length;
