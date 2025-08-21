@@ -5,6 +5,7 @@ import Dashboard from './Dashboard';
 import Header from './Header';
 import AIInsightsPage from '../page-components/AIInsightsPage';
 import AdminPage from '../page-components/AdminPage';
+import WhatsAppMessagesPage from '../page-components/WhatsAppMessagesPage';
 import { Category, Activity, NewActivityData, ActivityStatus, User, ActivityUpdate } from '../types';
 import ToastContainer from './ToastContainer';
 import { useMockData } from '../hooks/useMockData';
@@ -45,7 +46,7 @@ const getInitialFilterState = () => {
 };
 
 export default function AppShell() {
-  const [view, setView] = useState<'dashboard' | 'ai-insights' | 'admin' | 'map'>('dashboard');
+  const [view, setView] = useState<'dashboard' | 'ai-insights' | 'admin' | 'map' | 'whatsapp-messages'>('dashboard');
   
   // --- Centralized State Management ---
   const [loading, setLoading] = useState(true);
@@ -214,6 +215,17 @@ export default function AppShell() {
               users={users} activities={activities} allCategories={categories} loading={loading}
               onEditActivity={(activity) => handleOpenLogModal(activity)}
               onDeleteActivity={handleDeleteActivity}
+            />;
+        case 'whatsapp-messages':
+            return <WhatsAppMessagesPage 
+              onConvertToActivity={(message) => {
+                // Pre-fill modal with WhatsApp message content
+                const prefill = {
+                  notes: message.content,
+                  location: `From WhatsApp: ${message.sender.name}`,
+                };
+                handleOpenLogModal(null, prefill);
+              }}
             />;
         default:
             return null;

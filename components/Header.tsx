@@ -1,11 +1,11 @@
 
 import React from 'react';
-import { BarChart3, Sparkles, Shield, Map } from 'lucide-react';
+import { BarChart3, Sparkles, Shield, Map, MessageSquare } from 'lucide-react';
 import ThemeToggle from './ThemeToggle';
 
 interface HeaderProps {
-    view: 'dashboard' | 'ai-insights' | 'admin' | 'map';
-    setView: (view: 'dashboard' | 'ai-insights' | 'admin' | 'map') => void;
+    view: 'dashboard' | 'ai-insights' | 'admin' | 'map' | 'whatsapp-messages';
+    setView: (view: 'dashboard' | 'ai-insights' | 'admin' | 'map' | 'whatsapp-messages') => void;
 }
 
 const Header: React.FC<HeaderProps> = ({ view, setView }) => {
@@ -36,6 +36,13 @@ const Header: React.FC<HeaderProps> = ({ view, setView }) => {
                 >
                     <Map className="h-4 w-4" />
                     <span>Map</span>
+                </button>
+                <button 
+                    onClick={() => setView('whatsapp-messages')}
+                    className={`${navButtonClasses} ${view === 'whatsapp-messages' ? activeClasses : inactiveClasses}`}
+                >
+                    <MessageSquare className="h-4 w-4" />
+                    <span>WhatsApp</span>
                 </button>
                 <button 
                     onClick={() => setView('ai-insights')}
