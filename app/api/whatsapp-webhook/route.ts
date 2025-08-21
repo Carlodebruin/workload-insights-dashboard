@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const VERIFY_TOKEN = (process.env.WHATSAPP_VERIFY_TOKEN || 'my_verify_token_123').trim();
+const VERIFY_TOKEN = (process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || 'my_verify_token_123').trim();
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
