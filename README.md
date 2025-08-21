@@ -48,3 +48,4 @@ The app automatically detects available AI providers based on your configured AP
 - **Anthropic Claude**: Excellent reasoning and analysis capabilities  
 - **DeepSeek**: Cost-effective with strong performance
 - **Moonshot Kimi**: Long context support for large datasets
+# Force rebuild Thu Aug 21 16:46:28 SAST 2025
