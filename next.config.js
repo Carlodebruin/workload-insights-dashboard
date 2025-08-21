@@ -15,8 +15,7 @@ const nextConfig = {
     }
     return config;
   },
-  // Re-enable for production deployment
-  output: 'standalone',
+  // Removed standalone output for Vercel compatibility
   // Security headers for additional protection + CORS for API access
   async headers() {
     return [
