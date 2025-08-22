@@ -4,6 +4,7 @@ import { WhatsAppWebhookPayload, WhatsAppInboundMessage } from '../../../../lib/
 import { WhatsAppMessageOptimizer } from '../../../../lib/whatsapp/message-optimizer';
 import { prisma } from '../../../../lib/prisma';
 import { logSecureInfo, logSecureError, logSecureWarning, createRequestContext } from '../../../../lib/secure-logger';
+import { getWorkingAIProvider } from '../../../../lib/ai-factory';
 import crypto from 'crypto';
 
 /**
@@ -87,9 +88,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'WhatsApp not configured' }, { status: 503 });
     }
 
+    const payload: WhatsAppWebhookPayload = await request.json();
+
     // Verify webhook signature
     const signature = request.headers.get('x-hub-signature-256');
-    if (!verifyWebhookSignature(request, signature)) {
+    if (!(await verifyWebhookSignature(request, signature, payload))) {
       logSecureWarning('WhatsApp webhook signature verification failed', {
         ...requestContext,
         statusCode: 401
@@ -100,8 +103,6 @@ export async function POST(request: NextRequest) {
         { status: 401 }
       );
     }
-
-    const payload: WhatsAppWebhookPayload = await request.json();
 
     logSecureInfo('WhatsApp webhook received', {
       ...requestContext,
@@ -133,14 +134,15 @@ export async function POST(request: NextRequest) {
 /**
  * Verify webhook signature for security
  */
-function verifyWebhookSignature(request: NextRequest, signature: string | null): boolean {
+async function verifyWebhookSignature(request: NextRequest, signature: string | null, body: any): Promise<boolean> {
   if (!signature) return false;
 
   try {
     const config = whatsappConfig.getConfig();
+    const bodyString = JSON.stringify(body);
     const expectedSignature = 'sha256=' + crypto
       .createHmac('sha256', config.appSecret)
-      .update(JSON.stringify(request.body))
+      .update(bodyString)
       .digest('hex');
 
     return crypto.timingSafeEqual(
@@ -555,7 +557,7 @@ async function handleStatusCommand(
         category: {
           select: { name: true }
         },
-        assignedUser: {
+        assignedTo: {
           select: { name: true }
         },
         updates: {
@@ -583,10 +585,10 @@ async function handleStatusCommand(
 📍 **Location:** ${activity.location}
 📊 **Status:** ${activity.status}
 ⏰ **Reported:** ${new Date(activity.timestamp).toLocaleString()}
-${activity.assignedUser ? `👤 **Assigned to:** ${activity.assignedUser.name}` : ''}
+${activity.assignedTo ? `👤 **Assigned to:** ${activity.assignedTo.name}` : ''}
 
 ${activity.updates.length > 0 ? 
-  `📝 **Recent Updates:**\n${activity.updates.map((update, i) => 
+  `📝 **Recent Updates:**\n${activity.updates.map((update: any, i: number) => 
     `${i + 1}. ${new Date(update.timestamp).toLocaleDateString()}: ${update.notes}`
   ).join('\n')}` : 
   '📝 **No updates yet**'}
@@ -806,27 +808,43 @@ async function processIncidentReport(
         messageContent = `${message.type} attachment for incident report`;
     }
 
-    // Use AI to parse the incident report
+    // Use AI to parse the incident report with proper FormData format
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
       : process.env.NEXT_PUBLIC_VERCEL_URL 
       || 'http://localhost:3000';
+    
+    // Prepare FormData for AI parsing API
+    const formData = new FormData();
+    formData.append('message', messageContent);
+    formData.append('categories', JSON.stringify(categories));
+    
+    // Add photo data if available
+    if (photoUrl) {
+      formData.append('photo', photoUrl);
+    }
       
     const aiResponse = await fetch(`${baseUrl}/api/ai/parse`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: messageContent,
-        categories: categories,
-        source: 'whatsapp'
-      })
+      body: formData
     });
 
     if (!aiResponse.ok) {
-      throw new Error('AI parsing failed');
+      const errorText = await aiResponse.text();
+      logSecureWarning('AI parsing failed', requestContext, {
+        status: aiResponse.status,
+        error: errorText
+      });
+      throw new Error(`AI parsing failed: ${aiResponse.status} - ${errorText}`);
     }
 
     const parsedData = await aiResponse.json();
+    
+    // Validate AI parsing result
+    if (!parsedData.category_id || !parsedData.subcategory || !parsedData.location) {
+      logSecureWarning('AI parsing returned incomplete data', requestContext, { parsedData });
+      throw new Error('AI parsing returned incomplete data');
+    }
 
     // Find or create linked user
     let userId = whatsappUser.linkedUserId;
@@ -915,8 +933,146 @@ async function processIncidentReport(
     logSecureError('Failed to process WhatsApp incident report', requestContext, 
       error instanceof Error ? error : undefined);
     
-    // Send error response to user
-    await sendErrorResponse(whatsappUser, 'Failed to process your incident report. Please try again or contact support.', requestContext);
+    try {
+      // Extract message content again for fallback
+      let fallbackContent = '';
+      switch (message.type) {
+        case 'text':
+          fallbackContent = message.text?.body || '';
+          break;
+        case 'image':
+          fallbackContent = message.image?.caption || 'Image attachment for incident report';
+          break;
+        case 'location':
+          fallbackContent = `Location-based incident report at ${message.location?.name || 'specified location'}`;
+          break;
+        default:
+          fallbackContent = `${message.type} attachment for incident report`;
+      }
+      
+      // Fallback: Create manual processing entry
+      await createManualProcessingEntry(message, whatsappUser, fallbackContent, requestContext);
+      
+      // Send fallback response to user
+      const fallbackMessage = `📝 *Message Received*
+
+Your message has been received and added to our manual processing queue. A team member will review it shortly.
+
+Message: "${fallbackContent.substring(0, 100)}${fallbackContent.length > 100 ? '...' : ''}"
+
+You'll receive an update once it's been processed.
+
+If this is urgent, please call our emergency number.`;
+
+      const fallbackResult = await sendWhatsAppMessage(whatsappUser.phoneNumber, fallbackMessage, requestContext);
+      
+      if (!fallbackResult.success) {
+        logSecureError('Failed to send fallback message', requestContext, undefined, {
+          error: fallbackResult.error,
+          phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber)
+        });
+      }
+      
+    } catch (fallbackError) {
+      logSecureError('Failed to create manual processing entry', requestContext, 
+        fallbackError instanceof Error ? fallbackError : undefined);
+      
+      // Send error response to user
+      await sendErrorResponse(whatsappUser, 'Failed to process your incident report. Please try again or contact support.', requestContext);
+    }
+  }
+}
+
+/**
+ * Create manual processing entry when AI processing fails
+ */
+async function createManualProcessingEntry(
+  message: WhatsAppInboundMessage,
+  whatsappUser: any,
+  messageContent: string,
+  requestContext: any
+) {
+  try {
+    // Find or create a default "Manual Review" category
+    let manualCategory = await prisma.category.findFirst({
+      where: { name: 'Manual Review' }
+    });
+    
+    if (!manualCategory) {
+      manualCategory = await prisma.category.create({
+        data: {
+          name: 'Manual Review',
+          isSystem: true
+        }
+      });
+    }
+
+    // Find or create linked user
+    let userId = whatsappUser.linkedUserId;
+    
+    if (!userId) {
+      // Create a new user linked to this WhatsApp user
+      const newUser = await prisma.user.create({
+        data: {
+          name: whatsappUser.displayName || whatsappUser.profileName || `WhatsApp User (${whatsappUser.phoneNumber.slice(-4)})`,
+          phone_number: whatsappUser.phoneNumber,
+          role: 'Staff' // Default role for WhatsApp users
+        }
+      });
+      
+      // Link the WhatsApp user to the new user
+      await prisma.whatsAppUser.update({
+        where: { id: whatsappUser.id },
+        data: { linkedUserId: newUser.id }
+      });
+      
+      userId = newUser.id;
+      
+      logSecureInfo('Created new user for manual processing', requestContext, {
+        userId: newUser.id,
+        phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber)
+      });
+    }
+
+    // Create activity for manual review
+    const manualActivity = await prisma.activity.create({
+      data: {
+        user_id: userId,
+        category_id: manualCategory.id,
+        subcategory: 'WhatsApp Message - Requires Review',
+        location: 'Unknown - See Notes',
+        notes: `Manual review required for WhatsApp message:\n\nOriginal message: "${messageContent}"\n\nMessage type: ${message.type}\nFrom: ${maskPhoneNumber(whatsappUser.phoneNumber)}\nReceived: ${new Date().toISOString()}\n\nAI processing failed - manual categorization needed.`,
+        status: 'Unassigned'
+      },
+      select: {
+        id: true,
+        timestamp: true
+      }
+    });
+
+    // Link the WhatsApp message to the manual processing activity
+    await prisma.whatsAppMessage.updateMany({
+      where: { 
+        from: whatsappUser.phoneNumber,
+        waId: message.id
+      },
+      data: { 
+        relatedActivityId: manualActivity.id,
+        processed: true,
+        processingError: 'AI processing failed - created manual review task'
+      }
+    });
+
+    logSecureInfo('Manual processing entry created', requestContext, {
+      activityId: manualActivity.id,
+      userId: userId,
+      phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber)
+    });
+
+  } catch (error) {
+    logSecureError('Failed to create manual processing entry', requestContext,
+      error instanceof Error ? error : undefined);
+    throw error;
   }
 }
 
@@ -976,6 +1132,53 @@ async function sendContextualResponse(
 }
 
 /**
+ * Generate AI-powered confirmation response
+ */
+async function generateAIConfirmation(
+  activity: any,
+  referenceNumber: string,
+  requestContext: any
+): Promise<string> {
+  try {
+    const ai = getWorkingAIProvider();
+    
+    const prompt = `You are a helpful assistant for a school incident management system. Generate a professional but friendly WhatsApp confirmation message for an incident report that was just logged.
+
+Context:
+- Reference Number: ${referenceNumber}
+- Category: ${activity.category.name} - ${activity.subcategory}
+- Location: ${activity.location}
+- Status: ${activity.status}
+- Reported: ${new Date(activity.timestamp).toLocaleString()}
+
+Requirements:
+- Use appropriate emojis but keep it professional
+- Mention expected timeline based on category (urgent: 1-2 hours, normal: 24-48 hours, maintenance: 2-5 days)
+- Include reference number for tracking
+- Keep message under 160 characters for SMS compatibility
+- Use school-appropriate language
+- Reassure that the issue will be addressed
+
+Generate only the message text, no quotes or extra formatting.`;
+
+    const response = await ai.generateContent(prompt, { 
+      maxTokens: 200,
+      temperature: 0.3 
+    });
+    
+    return response.text.trim();
+    
+  } catch (error) {
+    logSecureWarning('AI confirmation generation failed, using fallback', requestContext, {
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    
+    // Fallback to standard message
+    return `✅ Task ${referenceNumber} logged successfully! ${activity.category.name} issue at ${activity.location}. Track progress with /status ${referenceNumber}`;
+  }
+}
+
+/**
  * Send incident confirmation message
  */
 async function sendIncidentConfirmation(
@@ -984,7 +1187,38 @@ async function sendIncidentConfirmation(
   referenceNumber: string,
   requestContext: any
 ) {
-  const confirmationMessage = `✅ *Incident Report Logged*
+  try {
+    // Generate AI-powered confirmation
+    const aiConfirmation = await generateAIConfirmation(activity, referenceNumber, requestContext);
+    
+    const confirmationMessage = `${aiConfirmation}
+
+📋 **Details:**
+🏷️ ${activity.category.name} - ${activity.subcategory}
+📍 ${activity.location}
+📊 ${activity.status}
+
+Type /status ${referenceNumber} for updates.`;
+
+    const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, confirmationMessage, requestContext);
+    
+    if (result.success) {
+      logSecureInfo('AI-powered confirmation sent', requestContext, {
+        referenceNumber,
+        phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber),
+        messageId: result.messageId,
+        aiGenerated: true
+      });
+    } else {
+      throw new Error(`Failed to send confirmation: ${result.error}`);
+    }
+    
+  } catch (error) {
+    logSecureError('Failed to send incident confirmation', requestContext,
+      error instanceof Error ? error : undefined);
+    
+    // Fallback to basic confirmation
+    const basicConfirmation = `✅ *Incident Report Logged*
 
 📋 **Reference:** ${referenceNumber}
 🏷️ **Category:** ${activity.category.name} - ${activity.subcategory}
@@ -996,7 +1230,15 @@ Your incident has been successfully recorded and will be addressed by the approp
 
 Type /status ${referenceNumber} to check updates.`;
 
-  await sendWhatsAppMessage(whatsappUser.phoneNumber, confirmationMessage, requestContext);
+    const fallbackResult = await sendWhatsAppMessage(whatsappUser.phoneNumber, basicConfirmation, requestContext);
+    
+    if (!fallbackResult.success) {
+      logSecureError('Fallback confirmation also failed', requestContext, undefined, {
+        error: fallbackResult.error,
+        referenceNumber
+      });
+    }
+  }
 }
 
 /**
@@ -1019,13 +1261,16 @@ Type /help for available commands.`;
 }
 
 /**
- * Send WhatsApp message using the Business API
+ * Send WhatsApp message using the Business API with enhanced error handling
  */
 async function sendWhatsAppMessage(
   phoneNumber: string,
   message: string,
-  requestContext: any
-) {
+  requestContext: any,
+  retryCount = 0
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const maxRetries = 2;
+  
   try {
     // Initialize WhatsApp config
     whatsappConfig.initialize();
@@ -1048,20 +1293,40 @@ async function sendWhatsAppMessage(
         'Authorization': `Bearer ${config.accessToken}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify(requestBody)
+      body: JSON.stringify(requestBody),
+      signal: AbortSignal.timeout(30000) // 30 second timeout
     });
 
     if (!response.ok) {
       const errorData = await response.json();
-      throw new Error(`WhatsApp API error: ${errorData.error?.message || response.statusText}`);
+      const errorMessage = errorData.error?.message || response.statusText;
+      
+      // Check if this is a retryable error
+      const retryableErrors = ['temporarily_unavailable', 'rate_limit_hit', 'server_error'];
+      const isRetryable = retryableErrors.some(err => errorMessage.toLowerCase().includes(err));
+      
+      if (isRetryable && retryCount < maxRetries) {
+        logSecureWarning('WhatsApp API error, retrying', requestContext, {
+          error: errorMessage,
+          retryCount: retryCount + 1,
+          phoneNumber: maskPhoneNumber(phoneNumber)
+        });
+        
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, retryCount) * 1000));
+        return sendWhatsAppMessage(phoneNumber, message, requestContext, retryCount + 1);
+      }
+      
+      throw new Error(`WhatsApp API error: ${errorMessage}`);
     }
 
     const result = await response.json();
+    const messageId = result.messages[0]?.id || 'unknown';
 
     // Store outbound message in database
     await prisma.whatsAppMessage.create({
       data: {
-        waId: result.messages[0]?.id || 'unknown',
+        waId: messageId,
         from: config.phoneNumberId,
         to: phoneNumber,
         type: 'text',
@@ -1076,14 +1341,44 @@ async function sendWhatsAppMessage(
 
     logSecureInfo('WhatsApp message sent successfully', requestContext, {
       phoneNumber: maskPhoneNumber(phoneNumber),
-      messageId: result.messages[0]?.id,
+      messageId: messageId,
+      messageLength: message.length,
+      retryCount
+    });
+
+    return { success: true, messageId };
+
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    logSecureError('Failed to send WhatsApp message', requestContext, error instanceof Error ? error : undefined, {
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      retryCount,
       messageLength: message.length
     });
 
-  } catch (error) {
-    logSecureError('Failed to send WhatsApp message', requestContext,
-      error instanceof Error ? error : undefined);
-    throw error; // Re-throw to handle in calling function
+    // Store failed message attempt
+    try {
+      await prisma.whatsAppMessage.create({
+        data: {
+          waId: `failed_${Date.now()}`,
+          from: 'system',
+          to: phoneNumber,
+          type: 'text',
+          content: JSON.stringify({ text: message }),
+          timestamp: new Date(),
+          direction: 'outbound',
+          status: 'failed',
+          isFreeMessage: false,
+          processed: true,
+          processingError: errorMessage
+        }
+      });
+    } catch (dbError) {
+      logSecureError('Failed to store failed message', requestContext, dbError instanceof Error ? dbError : undefined);
+    }
+
+    return { success: false, error: errorMessage };
   }
 }
 
