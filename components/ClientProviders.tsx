@@ -28,19 +28,9 @@ export default function ClientProviders({ children }: ClientProvidersProps) {
     <ThemeProvider 
       defaultTheme="dark" 
       storageKey="workload-insights-theme"
-      enableSystem={true}
-      attribute="class"
     >
-      <ToastProvider
-        maxToasts={5}
-        duration={4000}
-        position="top-right"
-      >
-        <GeofenceProvider
-          enableHighAccuracy={true}
-          timeout={10000}
-          maximumAge={60000}
-        >
+      <ToastProvider>
+        <GeofenceProvider>
           {children}
         </GeofenceProvider>
       </ToastProvider>

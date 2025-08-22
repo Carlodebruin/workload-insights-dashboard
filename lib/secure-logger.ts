@@ -14,6 +14,8 @@ interface LogContext {
   count?: number;
 }
 
+type HealthStatus = 'healthy' | 'warning' | 'unhealthy';
+
 // Safe error logging that excludes PII and sensitive data
 export function logSecureError(
   message: string,
@@ -97,6 +99,27 @@ export function logSecureWarning(
 // Utility to generate request ID for correlation
 export function generateRequestId(): string {
   return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+}
+
+// Health check logging
+export function logHealthCheck(
+  component: string,
+  status: HealthStatus,
+  context: LogContext,
+  additionalData?: any
+): void {
+  const logEntry = {
+    level: 'info',
+    message: `Health check: ${component}`,
+    status,
+    timestamp: context.timestamp,
+    operation: context.operation,
+    requestId: context.requestId,
+    component,
+    ...(additionalData && { details: additionalData })
+  };
+
+  console.log(JSON.stringify(safeLog.redact(logEntry)));
 }
 
 // Utility to extract safe user ID from request body

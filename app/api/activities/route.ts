@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server';
 import { prisma } from '../../../lib/prisma';
 import { validateBody, validateQuery, newActivitySchema, paginationSchema } from '../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext, extractSafeUserId } from '../../../lib/secure-logger';
+import { optimizedQueries, performanceMonitor } from '../../../lib/database-optimization';
 import type { Activity, ActivityUpdate } from '@prisma/client';
 
 // Type for Activity with included updates
@@ -41,71 +42,36 @@ export async function GET(request: NextRequest) {
       undefined
     );
 
-    // Fetch activities with pagination
-    const [activities, totalActivities] = await Promise.all([
-      prisma.activity.findMany({
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          user_id: true,
-          category_id: true,
-          subcategory: true,
-          location: true,
-          timestamp: true,
-          notes: true,
-          photo_url: true,
-          latitude: true,
-          longitude: true,
-          status: true,
-          assigned_to_user_id: true,
-          assignment_instructions: true,
-          resolution_notes: true,
-          updates: {
-            select: {
-              id: true,
-              timestamp: true,
-              notes: true,
-              photo_url: true,
-              author_id: true,
-            },
-            orderBy: {
-              timestamp: 'asc',
-            },
-          },
-        },
-        orderBy: {
-          timestamp: 'desc',
-        },
-      }),
-      prisma.activity.count(),
-    ]);
+    // Fetch activities with optimized query
+    const result = await performanceMonitor.measureQuery(
+      'fetch_activities_paginated',
+      () => optimizedQueries.getActivitiesLite(prisma, page, limit)
+    );
+
+    const { activities, pagination } = result;
 
     // Convert Date objects to ISO strings for JSON serialization
     const serializedActivities = activities.map((activity) => ({
       ...activity,
       timestamp: activity.timestamp.toISOString(),
-      updates: activity.updates?.map((update): SerializedActivityUpdate => ({
-        ...update,
-        timestamp: update.timestamp.toISOString(),
-      })) || [],
+      // Add user_id and category_id for backward compatibility
+      user_id: activity.user.id,
+      category_id: activity.category.id,
+      // Add assigned_to_user_id for backward compatibility  
+      assigned_to_user_id: activity.assignedTo?.id || null,
+      // Add empty fields for backward compatibility
+      notes: '',
+      photo_url: null,
+      latitude: null,
+      longitude: null,
+      assignment_instructions: null,
+      resolution_notes: null,
+      updates: []
     }));
-
-    // Calculate pagination metadata
-    const totalPages = Math.ceil(totalActivities / limit);
-    const hasNextPage = page < totalPages;
-    const hasPreviousPage = page > 1;
 
     const responseData = {
       activities: serializedActivities,
-      pagination: {
-        currentPage: page,
-        totalPages,
-        totalRecords: totalActivities,
-        pageSize: limit,
-        hasNextPage,
-        hasPreviousPage,
-      },
+      pagination
     };
 
     // Log successful operation

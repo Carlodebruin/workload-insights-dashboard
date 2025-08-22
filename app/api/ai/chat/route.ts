@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 // Type definitions for schema validation
 import { Activity, User, Category } from '../../../../types';
 import { INITIAL_ANALYSIS_PROMPT, CHAT_SYSTEM_INSTRUCTION } from '../../../../lib/prompts';
-import { createAIProvider, getProviderFromRequest } from '../../../../lib/ai-factory';
+import { createAIProvider, getProviderFromRequest, getWorkingAIProvider, createAIProviderSafe } from '../../../../lib/ai-factory';
 import { AIMessage } from '../../../../lib/ai-providers';
 
 const serializeActivitiesForAI = (activities: Activity[], users: User[], allCategories: Category[]): string => {
@@ -18,6 +18,35 @@ const serializeActivitiesForAI = (activities: Activity[], users: User[], allCate
     return JSON.stringify(serialized, null, 2);
 };
 
+export async function GET(request: Request) {
+    return NextResponse.json({
+        message: "AI Chat API is running",
+        supportedMethods: ["POST"],
+        usage: {
+            initialSummary: "POST with { message: 'INITIAL_SUMMARY', context: { activities, users, allCategories } }",
+            chat: "POST with { history: AIMessage[], message: string, context?: any }"
+        },
+        availableProviders: getAvailableProviders()
+    });
+}
+
+function getAvailableProviders() {
+    const providers = [];
+    if (process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY !== 'test_key_for_development_health_check') {
+        providers.push('claude');
+    }
+    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'test_key_for_development_health_check') {
+        providers.push('gemini');
+    }
+    if (process.env.DEEPSEEK_API_KEY) {
+        providers.push('deepseek');
+    }
+    if (process.env.KIMI_API_KEY) {
+        providers.push('kimi');
+    }
+    return providers;
+}
+
 export async function POST(request: Request) {
     try {
         const { history, message, context } = await request.json();
@@ -26,10 +55,17 @@ export async function POST(request: Request) {
         if (message === "INITIAL_SUMMARY") {
             const { activities, users, allCategories } = context;
             
-            // Provide a basic summary without AI when no valid provider is available
+            // Try to get a working AI provider with fallback
             try {
-                const providerType = getProviderFromRequest(request);
-                const ai = createAIProvider(providerType);
+                // First try user-specified provider, then fallback to any working provider
+                let ai: any = null;
+                const requestedProvider = getProviderFromRequest(request);
+                ai = createAIProviderSafe(requestedProvider);
+                
+                if (!ai) {
+                    console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
+                    ai = getWorkingAIProvider();
+                }
                 
                 const textData = serializeActivitiesForAI(activities, users, allCategories);
                 let prompt = INITIAL_ANALYSIS_PROMPT;
@@ -95,8 +131,15 @@ export async function POST(request: Request) {
 
         // --- Handle Streaming Chat ---
         try {
-            const providerType = getProviderFromRequest(request);
-            const ai = createAIProvider(providerType);
+            // First try user-specified provider, then fallback to any working provider
+            let ai: any = null;
+            const requestedProvider = getProviderFromRequest(request);
+            ai = createAIProviderSafe(requestedProvider);
+            
+            if (!ai) {
+                console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
+                ai = getWorkingAIProvider();
+            }
             
             const messages: AIMessage[] = [...history, { role: 'user', content: message }];
             const streamResponse = await ai.generateContentStream(messages, {

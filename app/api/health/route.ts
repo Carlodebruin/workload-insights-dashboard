@@ -3,6 +3,8 @@ import { connectionPool } from '../../../lib/prisma';
 import { envHelpers } from '../../../lib/env-validation';
 import { logSecureInfo, logSecureError, createRequestContext } from '../../../lib/secure-logger';
 import { logger, logApiRequest, logApiResponse } from '../../../lib/logger';
+import { getWorkingAIProvider } from '../../../lib/ai-factory';
+import { prisma } from '../../../lib/prisma';
 
 // Types for health check responses
 type HealthStatus = 'healthy' | 'unhealthy' | 'warning' | 'error' | 'unknown' | 'configured' | 'not_configured';
@@ -27,6 +29,12 @@ interface AiProvidersHealth {
 interface RedisHealth {
   status: HealthStatus;
   configured: boolean;
+}
+
+interface WhatsAppHealth {
+  status: HealthStatus;
+  configured: boolean;
+  messageCount: number;
 }
 
 interface OverallHealth {
@@ -57,12 +65,14 @@ export async function GET(request: NextRequest) {
       environment: EnvironmentHealth;
       aiProviders: AiProvidersHealth;
       redis: RedisHealth;
+      whatsapp: WhatsAppHealth;
       overall: OverallHealth;
     } = {
       database: { status: 'unknown', latency: null, error: null },
       environment: { status: 'unknown', errors: [] },
       aiProviders: { status: 'unknown', available: [], configured: 0 },
       redis: { status: 'unknown', configured: false },
+      whatsapp: { status: 'unknown', configured: false, messageCount: 0 },
       overall: { status: 'unknown', uptime: process.uptime() }
     };
 
@@ -123,19 +133,44 @@ export async function GET(request: NextRequest) {
 
     // 3. AI Providers Check
     try {
+      logger.debug('Starting AI providers health check', logContext);
       const availableProviders = envHelpers.getAvailableAiProviders();
       
+      // Test if AI provider is actually working
+      let aiStatus: HealthStatus = 'unhealthy';
+      try {
+        const aiProvider = getWorkingAIProvider();
+        if (aiProvider.name === 'mock') {
+          aiStatus = 'warning'; // Mock provider is working but not real AI
+        } else {
+          // Test actual AI provider
+          const testResponse = await aiProvider.generateContent('Test', { maxTokens: 5 });
+          aiStatus = testResponse.text.length > 0 ? 'healthy' : 'unhealthy';
+        }
+      } catch (aiError) {
+        aiStatus = 'error';
+      }
+      
       healthChecks.aiProviders = {
-        status: availableProviders.length > 0 ? 'healthy' : 'unhealthy',
+        status: aiStatus,
         available: availableProviders,
         configured: availableProviders.length
       };
+      
+      logger.logHealthCheck('ai_providers', aiStatus as 'healthy' | 'warning' | 'unhealthy', logContext, {
+        availableCount: availableProviders.length,
+        providers: availableProviders
+      });
     } catch (error) {
       healthChecks.aiProviders = {
         status: 'error',
         available: [],
         configured: 0
       };
+      
+      logger.logHealthCheck('ai_providers', 'unhealthy', logContext, {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
 
     // 4. Redis Configuration Check
@@ -153,11 +188,50 @@ export async function GET(request: NextRequest) {
       };
     }
 
-    // 5. Overall System Health
+    // 5. WhatsApp Integration Check
+    try {
+      logger.debug('Starting WhatsApp integration health check', logContext);
+      const hasWhatsAppConfig = !!(
+        process.env.WHATSAPP_VERIFY_TOKEN &&
+        process.env.WHATSAPP_ACCESS_TOKEN &&
+        process.env.WHATSAPP_PHONE_NUMBER_ID
+      );
+      
+      let messageCount = 0;
+      try {
+        messageCount = await prisma.whatsAppMessage.count();
+      } catch (dbError) {
+        // If we can't count messages, WhatsApp integration might still work
+      }
+      
+      healthChecks.whatsapp = {
+        status: hasWhatsAppConfig ? 'healthy' : 'not_configured',
+        configured: hasWhatsAppConfig,
+        messageCount
+      };
+      
+      logger.logHealthCheck('whatsapp', hasWhatsAppConfig ? 'healthy' : 'warning', logContext, {
+        configured: hasWhatsAppConfig,
+        messageCount
+      });
+    } catch (error) {
+      healthChecks.whatsapp = {
+        status: 'error',
+        configured: false,
+        messageCount: 0
+      };
+      
+      logger.logHealthCheck('whatsapp', 'unhealthy', logContext, {
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+
+    // 6. Overall System Health
     const componentStatuses = [
       healthChecks.database.status,
       healthChecks.environment.status,
-      healthChecks.aiProviders.status
+      healthChecks.aiProviders.status,
+      healthChecks.whatsapp.status
     ];
     
     const hasErrors = componentStatuses.includes('error');

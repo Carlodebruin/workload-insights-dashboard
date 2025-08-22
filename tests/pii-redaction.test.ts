@@ -193,13 +193,13 @@ function testEnvironmentConfiguration() {
   
   const environments = ['development', 'staging', 'production'];
   environments.forEach(env => {
-    process.env.NODE_ENV = env;
+    (process.env as any).NODE_ENV = env;
     delete process.env.PII_REDACTION_LEVEL; // Reset custom level
     console.log(`Environment '${env}' -> Default level: ${getDefaultRedactionLevel()}`);
   });
   
   // Restore original values
-  if (originalEnv) process.env.NODE_ENV = originalEnv;
+  if (originalEnv) (process.env as any).NODE_ENV = originalEnv;
   if (originalLevel) process.env.PII_REDACTION_LEVEL = originalLevel;
   
   console.log('\n' + '='.repeat(50) + '\n');

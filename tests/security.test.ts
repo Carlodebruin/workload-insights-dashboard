@@ -178,7 +178,7 @@ class AuthenticationTests {
       try {
         const response = await SecurityTestUtils.makeRequest('/api/data', {
           method: 'GET',
-          headers: attempt.headers
+          headers: attempt.headers as Record<string, string>
         });
 
         const passed = response.status === 401 || response.status === 403;

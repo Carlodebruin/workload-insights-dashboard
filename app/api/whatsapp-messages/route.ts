@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../lib/prisma';
+import { optimizedQueries, performanceMonitor } from '../../../lib/database-optimization';
 
 export async function GET(request: NextRequest) {
   try {
@@ -10,40 +11,15 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '20');
     const skip = (page - 1) * limit;
 
-    // Fetch messages with user info
-    const [messages, totalCount] = await Promise.all([
-      prisma.whatsAppMessage.findMany({
-        skip,
-        take: limit,
-        orderBy: { timestamp: 'desc' },
-        include: {
-          whatsappUser: {
-            select: {
-              displayName: true,
-              phoneNumber: true,
-              linkedUserId: true,
-              linkedUser: {
-                select: {
-                  name: true,
-                  role: true
-                }
-              }
-            }
-          },
-          relatedActivity: {
-            select: {
-              id: true,
-              category_id: true,
-              location: true,
-              status: true
-            }
-          }
-        }
-      }),
-      prisma.whatsAppMessage.count()
-    ]);
+    // Fetch messages with optimized query
+    const result = await performanceMonitor.measureQuery(
+      'fetch_whatsapp_messages',
+      () => optimizedQueries.getWhatsAppMessagesOptimized(prisma, page, limit)
+    );
+    
+    const { messages, pagination } = result;
 
-    console.log(`✅ Retrieved ${messages.length} messages out of ${totalCount} total`);
+    console.log(`✅ Retrieved ${messages.length} messages out of ${pagination.totalRecords} total`);
 
     // Process messages for display
     const processedMessages = messages.map(msg => {
@@ -77,14 +53,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       messages: processedMessages,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount / limit),
-        totalRecords: totalCount,
-        pageSize: limit,
-        hasNextPage: page < Math.ceil(totalCount / limit),
-        hasPreviousPage: page > 1
-      }
+      pagination
     });
 
   } catch (error) {

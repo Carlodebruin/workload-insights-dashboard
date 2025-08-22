@@ -4,30 +4,9 @@ import React, { Suspense } from 'react';
 import AppShell from '../components/AppShell';
 import DashboardSkeleton from '../components/DashboardSkeleton';
 
-/**
- * HomePage Component
- * 
- * This is the main entry point for the Workload Insights Dashboard.
- * It renders the AppShell component which contains the entire application
- * including navigation, data management, and all page views.
- * 
- * Architecture:
- * - Client Component: Required for AppShell's interactive state management
- * - Suspense Boundary: Provides loading state while AppShell initializes
- * - Error Boundary: Graceful error handling (handled by AppShell internally)
- * 
- * Data Flow:
- * HomePage -> AppShell -> [Dashboard|WhatsApp|AI|Admin|Map] Views
- */
-
 export default function HomePage() {
   return (
     <main className="min-h-screen bg-background">
-      {/* 
-        Suspense boundary provides loading state while AppShell fetches initial data.
-        The DashboardSkeleton shows a structured loading state that matches 
-        the final dashboard layout, reducing perceived loading time.
-      */}
       <Suspense 
         fallback={
           <div className="flex flex-col min-h-screen">
@@ -50,16 +29,6 @@ export default function HomePage() {
           </div>
         }
       >
-        {/* 
-          AppShell is the main application component that handles:
-          - Navigation between different views (Dashboard, WhatsApp, AI, Admin, Map)
-          - Data fetching and state management for activities, users, categories
-          - Modal management for creating/editing activities
-          - Global error handling and toast notifications
-          
-          All interactive functionality is contained within AppShell to maintain
-          clean separation between server-side layout and client-side application logic.
-        */}
         <AppShell />
       </Suspense>
     </main>
