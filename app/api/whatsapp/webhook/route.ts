@@ -385,7 +385,8 @@ function isIncidentReport(message: WhatsAppInboundMessage): boolean {
       'report', 'incident', 'problem', 'issue', 'emergency',
       'broken', 'damage', 'maintenance', 'repair', 'help',
       'fix', 'clean', 'leak', 'window', 'door', 'light', 'toilet',
-      'urgent', 'safety', 'hazard', 'fault', 'replace', 'install'
+      'urgent', 'safety', 'hazard', 'fault', 'replace', 'install',
+      'misbehav', 'behav', 'bullying', 'fight', 'classroom', 'discipline'
     ];
     
     return incidentKeywords.some(keyword => text.includes(keyword));
