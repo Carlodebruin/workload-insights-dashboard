@@ -22,16 +22,22 @@ export class WhatsAppConfigManager {
    * Initialize WhatsApp configuration from environment variables
    */
   public initialize(): void {
+    // Helper function to clean environment variables
+    const cleanEnvVar = (value: string | undefined): string => {
+      if (!value) return '';
+      return value.replace(/\\n$/, '').replace(/\n$/, '').trim();
+    };
+
     this.config = {
-      appId: process.env.WHATSAPP_APP_ID || '',
-      appSecret: process.env.WHATSAPP_APP_SECRET || '',
-      accessToken: process.env.WHATSAPP_ACCESS_TOKEN || '',
-      webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN || '',
-      phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || '',
-      businessAccountId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
+      appId: cleanEnvVar(process.env.WHATSAPP_APP_ID),
+      appSecret: cleanEnvVar(process.env.WHATSAPP_APP_SECRET),
+      accessToken: cleanEnvVar(process.env.WHATSAPP_ACCESS_TOKEN),
+      webhookVerifyToken: cleanEnvVar(process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || process.env.WHATSAPP_VERIFY_TOKEN),
+      phoneNumberId: cleanEnvVar(process.env.WHATSAPP_PHONE_NUMBER_ID),
+      businessAccountId: cleanEnvVar(process.env.WHATSAPP_BUSINESS_ACCOUNT_ID),
       apiVersion: process.env.WHATSAPP_API_VERSION || 'v21.0',
       baseUrl: 'https://graph.facebook.com',
-      webhookUrl: process.env.WHATSAPP_WEBHOOK_URL || ''
+      webhookUrl: cleanEnvVar(process.env.WHATSAPP_WEBHOOK_URL)
     };
 
     this.validateConfiguration();

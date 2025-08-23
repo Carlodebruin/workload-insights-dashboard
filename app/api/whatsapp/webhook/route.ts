@@ -88,11 +88,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'WhatsApp not configured' }, { status: 503 });
     }
 
-    const payload: WhatsAppWebhookPayload = await request.json();
+    // Get raw request body for signature verification
+    const rawBody = await request.text();
+    const payload: WhatsAppWebhookPayload = JSON.parse(rawBody);
 
     // Verify webhook signature
     const signature = request.headers.get('x-hub-signature-256');
-    if (!(await verifyWebhookSignature(request, signature, payload))) {
+    console.log('🔍 WEBHOOK SIGNATURE VERIFICATION:');
+    console.log('  📝 Raw body length:', rawBody.length);
+    console.log('  🔐 Signature header:', signature);
+    console.log('  📄 Body preview:', rawBody.substring(0, 200) + '...');
+    
+    // Allow bypassing signature verification in development with special header
+    const bypassSignature = request.headers.get('x-dev-bypass-signature') === 'true' && process.env.NODE_ENV === 'development';
+    
+    if (!bypassSignature && !(await verifyWebhookSignature(rawBody, signature))) {
+      console.log('❌ Signature verification FAILED');
       logSecureWarning('WhatsApp webhook signature verification failed', {
         ...requestContext,
         statusCode: 401
@@ -102,6 +113,12 @@ export async function POST(request: NextRequest) {
         { error: 'Unauthorized' },
         { status: 401 }
       );
+    }
+    
+    if (bypassSignature) {
+      console.log('🔥 DEV MODE: Signature verification BYPASSED');
+    } else {
+      console.log('✅ Signature verification PASSED');
     }
 
     logSecureInfo('WhatsApp webhook received', {
@@ -133,23 +150,53 @@ export async function POST(request: NextRequest) {
 
 /**
  * Verify webhook signature for security
+ * Meta sends the signature as x-hub-signature-256: sha256=<signature>
+ * We need to verify this against the raw request body using the app secret
  */
-async function verifyWebhookSignature(request: NextRequest, signature: string | null, body: any): Promise<boolean> {
-  if (!signature) return false;
+async function verifyWebhookSignature(rawBody: string, signature: string | null): Promise<boolean> {
+  if (!signature) {
+    console.log('❌ No signature provided in x-hub-signature-256 header');
+    return false;
+  }
 
   try {
     const config = whatsappConfig.getConfig();
-    const bodyString = JSON.stringify(body);
+    
+    // Clean the app secret (remove any trailing newlines)
+    const cleanAppSecret = config.appSecret.replace(/\\n$/, '').replace(/\n$/, '').trim();
+    
+    console.log('🔧 Signature verification details:');
+    console.log('  🔑 App secret length:', cleanAppSecret.length);
+    console.log('  🔑 App secret preview:', cleanAppSecret.substring(0, 10) + '...');
+    console.log('  📝 Raw body length:', rawBody.length);
+    console.log('  🔐 Received signature:', signature);
+    
+    // Compute expected signature
     const expectedSignature = 'sha256=' + crypto
-      .createHmac('sha256', config.appSecret)
-      .update(bodyString)
+      .createHmac('sha256', cleanAppSecret)
+      .update(rawBody, 'utf8')
       .digest('hex');
+    
+    console.log('  🧮 Expected signature:', expectedSignature);
+    console.log('  ⚙️ Signatures match:', signature === expectedSignature);
 
-    return crypto.timingSafeEqual(
+    // Use timing-safe comparison
+    const signatureMatch = crypto.timingSafeEqual(
       Buffer.from(signature),
       Buffer.from(expectedSignature)
     );
+    
+    if (!signatureMatch) {
+      console.log('❌ Signature verification failed:');
+      console.log('  Expected:', expectedSignature);
+      console.log('  Received:', signature);
+      console.log('  App Secret (first 20 chars):', cleanAppSecret.substring(0, 20));
+    }
+    
+    return signatureMatch;
+    
   } catch (error) {
+    console.log('❌ Signature verification error:', error instanceof Error ? error.message : 'Unknown error');
     logSecureError('Webhook signature verification failed', {
       operation: 'verify_signature',
       timestamp: new Date().toISOString()
@@ -455,6 +502,7 @@ async function handleHelpCommand(
   args: string[],
   requestContext: any
 ) {
+  console.log('🆘 HELP COMMAND: About to send help message to', maskPhoneNumber(whatsappUser.phoneNumber));
   let helpMessage = `📚 *Available Commands*
 
 🔧 *Basic Commands:*
@@ -517,7 +565,9 @@ Need help? Just describe any issue and I'll create a task for you! 😊`;
     }
   }
 
-  await sendWhatsAppMessage(whatsappUser.phoneNumber, helpMessage, requestContext);
+  console.log('🆘 HELP COMMAND: Calling sendWhatsAppMessage...');
+  const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, helpMessage, requestContext);
+  console.log('🆘 HELP COMMAND: sendWhatsAppMessage result:', result);
 }
 
 /**
@@ -598,7 +648,9 @@ ${activity.updates.length > 0 ?
 
 ${activity.resolution_notes ? `✅ **Resolution:** ${activity.resolution_notes}` : ''}`;
 
-    await sendWhatsAppMessage(whatsappUser.phoneNumber, statusMessage, requestContext);
+    console.log('📊 STATUS COMMAND: Calling sendWhatsAppMessage...');
+    const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, statusMessage, requestContext);
+    console.log('📊 STATUS COMMAND: sendWhatsAppMessage result:', result);
 
   } catch (error) {
     await sendWhatsAppMessage(whatsappUser.phoneNumber, 
@@ -698,7 +750,9 @@ ${activities.map((activity, i) => {
 
 Use /status [reference] for details on any task.`;
 
-  await sendWhatsAppMessage(whatsappUser.phoneNumber, listMessage, requestContext);
+  console.log('📋 LIST COMMAND: Calling sendWhatsAppMessage...');
+  const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, listMessage, requestContext);
+  console.log('📋 LIST COMMAND: sendWhatsAppMessage result:', result);
 }
 
 /**
@@ -753,7 +807,9 @@ Available commands:
 
 Or just describe any issue to report it! 📝`;
 
-  await sendWhatsAppMessage(whatsappUser.phoneNumber, response, requestContext);
+  console.log('❓ UNKNOWN COMMAND: Calling sendWhatsAppMessage...');
+  const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, response, requestContext);
+  console.log('❓ UNKNOWN COMMAND: sendWhatsAppMessage result:', result);
 }
 
 /**
@@ -811,11 +867,24 @@ async function processIncidentReport(
         messageContent = `${message.type} attachment for incident report`;
     }
 
+    // 🔍 DIAGNOSTIC: Start AI processing
+    logSecureInfo('🚀 Starting AI processing for incident', requestContext, {
+      messageContent: messageContent.substring(0, 100) + '...',
+      categoriesCount: categories.length,
+      hasPhoto: !!photoUrl,
+      hasLocation: !!locationData
+    });
+
     // Use AI to parse the incident report with proper FormData format
     const baseUrl = process.env.VERCEL_URL 
       ? `https://${process.env.VERCEL_URL}` 
       : process.env.NEXT_PUBLIC_VERCEL_URL 
       || 'http://localhost:3000';
+    
+    logSecureInfo('🔍 AI parsing URL constructed', requestContext, {
+      baseUrl,
+      endpoint: `${baseUrl}/api/ai/parse`
+    });
     
     // Prepare FormData for AI parsing API
     const formData = new FormData();
@@ -827,14 +896,26 @@ async function processIncidentReport(
       formData.append('photo', photoUrl);
     }
       
+    logSecureInfo('📤 Calling AI parse endpoint', requestContext, {
+      url: `${baseUrl}/api/ai/parse`,
+      messageLength: messageContent.length
+    });
+
     const aiResponse = await fetch(`${baseUrl}/api/ai/parse`, {
       method: 'POST',
       body: formData
     });
 
+    logSecureInfo('📥 AI parse response received', requestContext, {
+      status: aiResponse.status,
+      statusText: aiResponse.statusText,
+      ok: aiResponse.ok
+    });
+
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      logSecureWarning('AI parsing failed', requestContext, {
+      logSecureError('❌ AI parsing failed', requestContext, 
+        new Error(`AI parsing failed: ${aiResponse.status} - ${errorText}`), {
         status: aiResponse.status,
         error: errorText
       });
@@ -842,6 +923,14 @@ async function processIncidentReport(
     }
 
     const parsedData = await aiResponse.json();
+    logSecureInfo('✅ AI parsing successful', requestContext, {
+      parsedData: {
+        category_id: parsedData.category_id,
+        subcategory: parsedData.subcategory,
+        location: parsedData.location,
+        hasNotes: !!parsedData.notes
+      }
+    });
     
     // Validate AI parsing result
     if (!parsedData.category_id || !parsedData.subcategory || !parsedData.location) {
@@ -1120,7 +1209,9 @@ async function sendContextualResponse(
       responseMessage = `I received your ${message.type} but need more information to help you.\n\nType /help for available commands or provide details about any issues you'd like to report.`;
     }
 
-    await sendWhatsAppMessage(whatsappUser.phoneNumber, responseMessage, requestContext);
+    console.log('💬 CONTEXTUAL RESPONSE: Calling sendWhatsAppMessage...');
+    const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, responseMessage, requestContext);
+    console.log('💬 CONTEXTUAL RESPONSE: sendWhatsAppMessage result:', result);
 
     logSecureInfo('Contextual response sent', requestContext, {
       phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber),
@@ -1143,7 +1234,18 @@ async function generateAIConfirmation(
   requestContext: any
 ): Promise<string> {
   try {
+    // 🔍 DIAGNOSTIC: Start response generation
+    logSecureInfo('🤖 Starting AI confirmation generation', requestContext, {
+      referenceNumber,
+      category: activity.category?.name,
+      subcategory: activity.subcategory,
+      location: activity.location?.substring(0, 50) + '...'
+    });
+
     const ai = getWorkingAIProvider();
+    logSecureInfo('🔧 AI provider obtained', requestContext, {
+      providerName: ai.constructor.name
+    });
     
     const prompt = `You are a helpful assistant for a school incident management system. Generate a professional but friendly WhatsApp confirmation message for an incident report that was just logged.
 
@@ -1164,15 +1266,25 @@ Requirements:
 
 Generate only the message text, no quotes or extra formatting.`;
 
+    logSecureInfo('💬 Calling AI generateContent', requestContext, {
+      promptLength: prompt.length
+    });
+
     const response = await ai.generateContent(prompt, { 
       maxTokens: 200,
       temperature: 0.3 
     });
     
+    logSecureInfo('✅ AI content generated successfully', requestContext, {
+      responseLength: response.text?.length || 0,
+      preview: response.text?.substring(0, 100) + '...'
+    });
+
     return response.text.trim();
     
   } catch (error) {
-    logSecureWarning('AI confirmation generation failed, using fallback', requestContext, {
+    logSecureError('❌ AI confirmation generation failed, using fallback', requestContext, 
+      error instanceof Error ? error : undefined, {
       error: error instanceof Error ? error.message : 'Unknown error'
     });
     
@@ -1203,7 +1315,9 @@ async function sendIncidentConfirmation(
 
 Type /status ${referenceNumber} for updates.`;
 
+    console.log('✅ INCIDENT CONFIRMATION: Calling sendWhatsAppMessage...');
     const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, confirmationMessage, requestContext);
+    console.log('✅ INCIDENT CONFIRMATION: sendWhatsAppMessage result:', result);
     
     if (result.success) {
       logSecureInfo('AI-powered confirmation sent', requestContext, {
@@ -1233,7 +1347,9 @@ Your incident has been successfully recorded and will be addressed by the approp
 
 Type /status ${referenceNumber} to check updates.`;
 
+    console.log('🔄 FALLBACK CONFIRMATION: Calling sendWhatsAppMessage...');
     const fallbackResult = await sendWhatsAppMessage(whatsappUser.phoneNumber, basicConfirmation, requestContext);
+    console.log('🔄 FALLBACK CONFIRMATION: sendWhatsAppMessage result:', fallbackResult);
     
     if (!fallbackResult.success) {
       logSecureError('Fallback confirmation also failed', requestContext, undefined, {
@@ -1260,11 +1376,13 @@ Please try again or contact support if the problem persists.
 
 Type /help for available commands.`;
 
-  await sendWhatsAppMessage(whatsappUser.phoneNumber, response, requestContext);
+  console.log('❌ ERROR RESPONSE: Calling sendWhatsAppMessage...');
+  const result = await sendWhatsAppMessage(whatsappUser.phoneNumber, response, requestContext);
+  console.log('❌ ERROR RESPONSE: sendWhatsAppMessage result:', result);
 }
 
 /**
- * Send WhatsApp message using the Business API with enhanced error handling
+ * Send WhatsApp message using the Business API with enhanced deployment logging
  */
 async function sendWhatsAppMessage(
   phoneNumber: string,
@@ -1275,12 +1393,152 @@ async function sendWhatsAppMessage(
   const maxRetries = 2;
   
   try {
-    // Initialize WhatsApp config
+    // 🔍 ENHANCED DEPLOYMENT DIAGNOSTICS: Start WhatsApp send
+    console.log('\n🚀 ===== WHATSAPP MESSAGE SEND START (ENHANCED DEPLOYMENT LOGGING) =====');
+    console.log('🌍 Environment:', process.env.NODE_ENV || 'unknown');
+    console.log('🏗️ Platform:', process.env.VERCEL ? 'Vercel' : 'Local');
+    console.log('⏰ Timestamp:', new Date().toISOString());
+    console.log('📞 Phone Number:', maskPhoneNumber(phoneNumber));
+    console.log('📝 Message Length:', message.length);
+    console.log('🔄 Retry Count:', retryCount);
+    console.log('📄 Message Preview:', message.substring(0, 150) + (message.length > 150 ? '...' : ''));
+    
+    // 🔍 ENHANCED: Environment variable debugging
+    console.log('\n🔧 ===== ENVIRONMENT VARIABLES ANALYSIS =====');
+    const rawAccessToken = process.env.WHATSAPP_ACCESS_TOKEN;
+    const rawPhoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+    const rawBusinessAccountId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    const rawAppSecret = process.env.WHATSAPP_APP_SECRET;
+    
+    console.log('🔑 Raw Access Token Info:');
+    console.log('  ✅ Exists:', !!rawAccessToken);
+    console.log('  📏 Length:', rawAccessToken?.length || 0);
+    console.log('  🔍 Preview (first 50 chars):', rawAccessToken?.substring(0, 50) + '...');
+    console.log('  ⚠️ Has trailing chars:', rawAccessToken ? JSON.stringify(rawAccessToken.slice(-5)) : 'N/A');
+    console.log('  📊 Type:', typeof rawAccessToken);
+    
+    console.log('📱 Raw Phone Number ID Info:');
+    console.log('  ✅ Exists:', !!rawPhoneNumberId);
+    console.log('  📏 Length:', rawPhoneNumberId?.length || 0);
+    console.log('  🔍 Value:', rawPhoneNumberId || 'NOT SET');
+    console.log('  ⚠️ Has trailing chars:', rawPhoneNumberId ? JSON.stringify(rawPhoneNumberId.slice(-3)) : 'N/A');
+    console.log('  📊 Type:', typeof rawPhoneNumberId);
+    
+    console.log('🏢 Raw Business Account ID Info:');
+    console.log('  ✅ Exists:', !!rawBusinessAccountId);
+    console.log('  📏 Length:', rawBusinessAccountId?.length || 0);
+    console.log('  🔍 Value:', rawBusinessAccountId || 'NOT SET');
+    console.log('  ⚠️ Has trailing chars:', rawBusinessAccountId ? JSON.stringify(rawBusinessAccountId.slice(-3)) : 'N/A');
+    
+    console.log('🔐 Raw App Secret Info:');
+    console.log('  ✅ Exists:', !!rawAppSecret);
+    console.log('  📏 Length:', rawAppSecret?.length || 0);
+    console.log('  🔍 Preview (first 20 chars):', rawAppSecret?.substring(0, 20) + '...');
+    console.log('  ⚠️ Has trailing chars:', rawAppSecret ? JSON.stringify(rawAppSecret.slice(-3)) : 'N/A');
+    
+    logSecureInfo('📤 Starting WhatsApp message send with enhanced logging', requestContext, {
+      environment: process.env.NODE_ENV,
+      platform: process.env.VERCEL ? 'Vercel' : 'Local',
+      phoneNumber: maskPhoneNumber(phoneNumber),
+      messageLength: message.length,
+      retryCount,
+      messagePreview: message.substring(0, 100) + '...'
+    });
+
+    // Initialize WhatsApp config with detailed logging
+    console.log('\n🔧 ===== WHATSAPP CONFIG INITIALIZATION =====');
+    console.log('🚀 Calling whatsappConfig.initialize()...');
     whatsappConfig.initialize();
     const config = whatsappConfig.getConfig();
+    
+    console.log('✅ Config loaded and processed:');
+    console.log('  🔑 Has Access Token:', !!config.accessToken);
+    console.log('  🔑 Access Token Length:', config.accessToken?.length || 0);
+    console.log('  🔑 Access Token Type:', config.accessToken?.startsWith('EAA') ? 'User Access Token (EAA)' : config.accessToken?.startsWith('EAB') ? 'System User Token (EAB)' : 'Unknown Token Type');
+    console.log('  🔑 Token Preview (first 50):', config.accessToken?.substring(0, 50) + '...');
+    console.log('  🔑 Token suffix (last 10):', config.accessToken?.slice(-10));
+    
+    console.log('  📱 Has Phone Number ID:', !!config.phoneNumberId);
+    console.log('  📱 Phone Number ID:', config.phoneNumberId);
+    console.log('  📱 Phone Number ID Length:', config.phoneNumberId?.length || 0);
+    console.log('  📱 Phone Number ID Type:', typeof config.phoneNumberId);
+    
+    console.log('  🏢 Business Account ID:', config.businessAccountId);
+    console.log('  🏢 Business Account ID Length:', config.businessAccountId?.length || 0);
+    
+    console.log('  📊 API Version:', config.apiVersion);
+    console.log('  🔐 App Secret Length:', config.appSecret?.length || 0);
+    console.log('  🔐 App Secret Preview:', config.appSecret?.substring(0, 20) + '...');
+    
+    // Check for common configuration issues
+    console.log('\n🔍 ===== CONFIG VALIDATION CHECKS =====');
+    const configIssues = [];
+    
+    if (!config.accessToken) configIssues.push('❌ Access token is missing');
+    else if (config.accessToken.length < 100) configIssues.push('⚠️ Access token seems too short');
+    
+    if (!config.phoneNumberId) configIssues.push('❌ Phone number ID is missing');
+    else if (!/^\d+$/.test(config.phoneNumberId)) configIssues.push('⚠️ Phone number ID contains non-numeric characters');
+    else if (config.phoneNumberId.length < 10) configIssues.push('⚠️ Phone number ID seems too short');
+    
+    if (!config.businessAccountId) configIssues.push('❌ Business account ID is missing');
+    if (!config.appSecret) configIssues.push('❌ App secret is missing');
+    
+    if (configIssues.length > 0) {
+      console.log('⚠️ Configuration Issues Found:');
+      configIssues.forEach(issue => console.log(`  ${issue}`));
+    } else {
+      console.log('✅ All configuration validation checks passed');
+    }
+    
+    logSecureInfo('🔧 WhatsApp config initialized with detailed analysis', requestContext, {
+      hasAccessToken: !!config.accessToken,
+      tokenLength: config.accessToken?.length || 0,
+      tokenType: config.accessToken?.startsWith('EAA') ? 'User Access Token' : config.accessToken?.startsWith('EAB') ? 'System User Token' : 'Unknown',
+      hasPhoneNumberId: !!config.phoneNumberId,
+      phoneNumberIdLength: config.phoneNumberId?.length || 0,
+      apiVersion: config.apiVersion,
+      configIssuesCount: configIssues.length
+    });
 
+    // 🔍 ENHANCED: API URL Construction with detailed validation
+    console.log('\n🌐 ===== API URL CONSTRUCTION =====');
     const apiUrl = `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`;
     
+    console.log('🔗 URL Construction Details:');
+    console.log('  🌐 Base URL: https://graph.facebook.com');
+    console.log('  📊 API Version:', config.apiVersion);
+    console.log('  📱 Phone Number ID (raw):', config.phoneNumberId);
+    console.log('  📱 Phone Number ID (encoded):', encodeURIComponent(config.phoneNumberId || ''));
+    console.log('  🔗 Complete URL:', apiUrl);
+    console.log('  📏 URL Length:', apiUrl.length);
+    
+    // Validate URL format
+    const urlValidation = [];
+    if (apiUrl.includes('undefined')) urlValidation.push('❌ URL contains undefined values');
+    if (apiUrl.includes('null')) urlValidation.push('❌ URL contains null values');
+    if (apiUrl.includes('//messages')) urlValidation.push('❌ URL has double slashes before messages');
+    if (apiUrl.includes('/messages/messages')) urlValidation.push('❌ URL has duplicate /messages path');
+    if (!/\/v\d+\.\d+\/\d+\/messages$/.test(apiUrl.split('https://graph.facebook.com')[1])) {
+      urlValidation.push('⚠️ URL format doesn\'t match expected pattern');
+    }
+    
+    if (urlValidation.length > 0) {
+      console.log('⚠️ URL Validation Issues:');
+      urlValidation.forEach(issue => console.log(`  ${issue}`));
+    } else {
+      console.log('✅ URL format validation passed');
+    }
+    
+    logSecureInfo('🔗 WhatsApp API URL constructed and validated', requestContext, {
+      apiUrl,
+      phoneNumberId: config.phoneNumberId,
+      urlLength: apiUrl.length,
+      urlValidationIssues: urlValidation.length
+    });
+    
+    // 🔍 ENHANCED: Request body construction and validation
+    console.log('\n📦 ===== REQUEST BODY CONSTRUCTION =====');
     const requestBody = {
       messaging_product: 'whatsapp',
       to: phoneNumber,
@@ -1289,20 +1547,214 @@ async function sendWhatsAppMessage(
         body: message
       }
     };
+    
+    const requestBodyJson = JSON.stringify(requestBody);
+    const requestBodySize = requestBodyJson.length;
+    
+    console.log('📦 Request Body Details:');
+    console.log('  📋 Messaging Product:', requestBody.messaging_product);
+    console.log('  📞 To (masked):', maskPhoneNumber(requestBody.to));
+    console.log('  🏷️ Type:', requestBody.type);
+    console.log('  📝 Message Body Length:', requestBody.text.body.length);
+    console.log('  📏 JSON Size:', requestBodySize, 'bytes');
+    console.log('  📄 Complete JSON:', requestBodyJson);
+    
+    // Validate request body
+    const bodyValidation = [];
+    if (!requestBody.messaging_product) bodyValidation.push('❌ Missing messaging_product');
+    if (!requestBody.to) bodyValidation.push('❌ Missing to field');
+    if (!requestBody.type) bodyValidation.push('❌ Missing type field');
+    if (!requestBody.text?.body) bodyValidation.push('❌ Missing message body');
+    if (requestBodySize > 4096) bodyValidation.push('⚠️ Request body might be too large');
+    
+    if (bodyValidation.length > 0) {
+      console.log('⚠️ Request Body Validation Issues:');
+      bodyValidation.forEach(issue => console.log(`  ${issue}`));
+    } else {
+      console.log('✅ Request body validation passed');
+    }
 
-    const response = await fetch(apiUrl, {
+    // 🔍 ENHANCED: Headers construction and validation
+    console.log('\n🔐 ===== REQUEST HEADERS CONSTRUCTION =====');
+    const headers = {
+      'Authorization': `Bearer ${config.accessToken}`,
+      'Content-Type': 'application/json'
+    };
+    
+    console.log('📋 Request Headers:');
+    console.log('  🔐 Authorization: Bearer [TOKEN_PREVIEW]');
+    console.log('  🔑 Token Length:', config.accessToken?.length || 0);
+    console.log('  🔑 Token Prefix:', config.accessToken?.substring(0, 10) + '***');
+    console.log('  🔑 Token Suffix:', '***' + config.accessToken?.slice(-10));
+    console.log('  📄 Content-Type:', headers['Content-Type']);
+    
+    // Validate headers
+    const headerValidation = [];
+    if (!config.accessToken) headerValidation.push('❌ Access token is missing');
+    if (config.accessToken && config.accessToken.length < 50) headerValidation.push('⚠️ Access token seems too short');
+    if (!headers['Content-Type']) headerValidation.push('❌ Content-Type header missing');
+    
+    if (headerValidation.length > 0) {
+      console.log('⚠️ Header Validation Issues:');
+      headerValidation.forEach(issue => console.log(`  ${issue}`));
+    } else {
+      console.log('✅ Header validation passed');
+    }
+
+    logSecureInfo('🌐 WhatsApp API request prepared with comprehensive validation', requestContext, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(30000) // 30 second timeout
+      url: apiUrl,
+      bodySize: requestBodySize,
+      tokenLength: config.accessToken?.length || 0,
+      validationIssues: [...urlValidation, ...bodyValidation, ...headerValidation].length
     });
 
+    // 🔍 ENHANCED: Pre-flight check before API call
+    console.log('\n🚀 ===== MAKING API CALL TO WHATSAPP =====');
+    console.log('⏰ Call initiated at:', new Date().toISOString());
+    console.log('🌐 Target URL:', apiUrl);
+    console.log('📦 Request method: POST');
+    console.log('📏 Payload size:', requestBodySize, 'bytes');
+    console.log('⏱️ Timeout: 30000ms (30 seconds)');
+    
+    const startTime = Date.now();
+    
+    try {
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${config.accessToken}`,
+          'Content-Type': 'application/json'
+        },
+        body: requestBodyJson,
+        signal: AbortSignal.timeout(30000) // 30 second timeout
+      });
+      
+      const endTime = Date.now();
+      const responseTime = endTime - startTime;
+      
+      console.log('\n📥 ===== WHATSAPP API RESPONSE ANALYSIS =====');
+      console.log('⏱️ Response time:', responseTime + 'ms');
+      console.log('📊 Status Code:', response.status);
+      console.log('📃 Status Text:', response.statusText);
+      console.log('✅ Response OK:', response.ok);
+      console.log('🏷️ Content Type:', response.headers.get('content-type'));
+      console.log('📏 Content Length:', response.headers.get('content-length'));
+      console.log('🔍 Server:', response.headers.get('server'));
+      console.log('📅 Date:', response.headers.get('date'));
+      console.log('🆔 X-FB-Trace-ID:', response.headers.get('x-fb-trace-id'));
+      console.log('⚡ X-FB-Rev:', response.headers.get('x-fb-rev'));
+      
+      // Capture all response headers for debugging
+      const allHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        allHeaders[key] = value;
+      });
+      console.log('📋 All Response Headers:', JSON.stringify(allHeaders, null, 2));
+      
+      logSecureInfo('📥 WhatsApp API response received with detailed analysis', requestContext, {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok,
+        responseTime: responseTime,
+        headers: allHeaders
+      });
+
     if (!response.ok) {
-      const errorData = await response.json();
-      const errorMessage = errorData.error?.message || response.statusText;
+      console.log('\n❌ ===== API CALL FAILED - ERROR ANALYSIS =====');
+      
+      let errorData;
+      let errorText = '';
+      
+      try {
+        console.log('📄 Attempting to parse JSON error response...');
+        errorText = await response.text();
+        console.log('📄 Raw error response text:', errorText);
+        
+        try {
+          errorData = JSON.parse(errorText);
+          console.log('✅ Successfully parsed JSON error response');
+        } catch (parseError) {
+          console.log('⚠️ Failed to parse error response as JSON:', parseError instanceof Error ? parseError.message : 'Unknown parse error');
+          errorData = { rawResponse: errorText };
+        }
+      } catch (textError) {
+        console.log('❌ Failed to read error response text:', textError instanceof Error ? textError.message : 'Unknown text error');
+        errorData = { error: 'Failed to read response' };
+      }
+      
+      const errorMessage = errorData.error?.message || response.statusText || 'Unknown error';
+      
+      console.log('\n💥 ===== COMPREHENSIVE ERROR DETAILS =====');
+      console.log('📊 HTTP Status:', response.status, response.statusText);
+      console.log('🔢 Error Code:', errorData.error?.code || 'Not provided');
+      console.log('📝 Error Message:', errorMessage);
+      console.log('🏷️ Error Type:', errorData.error?.type || 'Not provided');
+      console.log('🆔 Error Subcode:', errorData.error?.error_subcode || 'Not provided');
+      console.log('🔍 FB Trace ID:', errorData.error?.fbtrace_id || response.headers.get('x-fb-trace-id') || 'Not provided');
+      console.log('📄 Error User Title:', errorData.error?.error_user_title || 'Not provided');
+      console.log('📄 Error User Message:', errorData.error?.error_user_msg || 'Not provided');
+      console.log('🔗 Error Data:', errorData.error?.error_data || 'Not provided');
+      console.log('🌐 Is Transient:', errorData.error?.is_transient || 'Not provided');
+      console.log('📄 Full Error Response:', JSON.stringify(errorData, null, 2));
+      console.log('📄 Raw Response Text (first 500 chars):', errorText.substring(0, 500));
+      
+      // Enhanced error classification for debugging
+      console.log('\n🔍 ===== ERROR CLASSIFICATION =====');
+      const errorClassification = [];
+      
+      if (response.status === 401) {
+        errorClassification.push('🔑 AUTHENTICATION ERROR - Token may be invalid, expired, or lack permissions');
+      }
+      if (response.status === 403) {
+        errorClassification.push('🚫 AUTHORIZATION ERROR - Token valid but lacks required permissions');
+      }
+      if (response.status === 404) {
+        errorClassification.push('❓ NOT FOUND ERROR - Phone Number ID or endpoint may be incorrect');
+      }
+      if (response.status === 429) {
+        errorClassification.push('⏱️ RATE LIMIT ERROR - Too many requests, retry with backoff');
+      }
+      if (response.status >= 500) {
+        errorClassification.push('🔥 SERVER ERROR - Meta/WhatsApp API issue, retry may help');
+      }
+      
+      if (errorData.error?.code === 190) {
+        errorClassification.push('🔑 ERROR 190 - Invalid access token (expired, revoked, or malformed)');
+      }
+      if (errorData.error?.code === 100) {
+        errorClassification.push('❌ ERROR 100 - Invalid parameter (check phone number, message format, etc.)');
+      }
+      if (errorData.error?.code === 200) {
+        errorClassification.push('🚫 ERROR 200 - Permission denied (insufficient permissions)');
+      }
+      
+      if (errorMessage.toLowerCase().includes('token')) {
+        errorClassification.push('🔑 TOKEN ISSUE - Error message mentions token problems');
+      }
+      if (errorMessage.toLowerCase().includes('phone')) {
+        errorClassification.push('📱 PHONE ISSUE - Error message mentions phone number problems');
+      }
+      if (errorMessage.toLowerCase().includes('permission')) {
+        errorClassification.push('🚫 PERMISSION ISSUE - Error message mentions permission problems');
+      }
+      
+      console.log('🎯 Error Classification:');
+      if (errorClassification.length > 0) {
+        errorClassification.forEach(classification => console.log(`  ${classification}`));
+      } else {
+        console.log('  ❓ Unknown error type - review full error details above');
+      }
+      
+      logSecureError('❌ WhatsApp API call failed with comprehensive analysis', requestContext, 
+        new Error(`WhatsApp API error: ${errorMessage}`), {
+        status: response.status,
+        statusText: response.statusText,
+        errorData,
+        rawErrorText: errorText.substring(0, 500),
+        retryCount,
+        errorClassification
+      });
       
       // Check if this is a retryable error
       const retryableErrors = ['temporarily_unavailable', 'rate_limit_hit', 'server_error'];
@@ -1323,10 +1775,17 @@ async function sendWhatsAppMessage(
       throw new Error(`WhatsApp API error: ${errorMessage}`);
     }
 
+    console.log('✅ API call successful, parsing response...');
     const result = await response.json();
     const messageId = result.messages[0]?.id || 'unknown';
+    
+    console.log('🎉 WhatsApp API Success Response:');
+    console.log('  📨 Message ID:', messageId);
+    console.log('  📊 Status:', result.messages[0]?.message_status);
+    console.log('  📄 Full Response:', JSON.stringify(result, null, 2));
 
     // Store outbound message in database
+    console.log('💾 Storing message in database...');
     await prisma.whatsAppMessage.create({
       data: {
         waId: messageId,
@@ -1341,6 +1800,7 @@ async function sendWhatsAppMessage(
         processed: true
       }
     });
+    console.log('✅ Message stored in database successfully');
 
     logSecureInfo('WhatsApp message sent successfully', requestContext, {
       phoneNumber: maskPhoneNumber(phoneNumber),
@@ -1348,11 +1808,20 @@ async function sendWhatsAppMessage(
       messageLength: message.length,
       retryCount
     });
+    
+    console.log('🏁 ===== WHATSAPP MESSAGE SEND SUCCESS =====\n');
 
     return { success: true, messageId };
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
+    console.log('💥 ===== WHATSAPP MESSAGE SEND FAILED =====');
+    console.log('❌ Catch Block Error:', errorMessage);
+    console.log('📞 Phone Number:', maskPhoneNumber(phoneNumber));
+    console.log('🔄 Retry Count:', retryCount);
+    console.log('📝 Message Length:', message.length);
+    console.log('🔍 Error Stack:', error instanceof Error ? error.stack : 'No stack trace');
     
     logSecureError('Failed to send WhatsApp message', requestContext, error instanceof Error ? error : undefined, {
       phoneNumber: maskPhoneNumber(phoneNumber),
@@ -1378,9 +1847,11 @@ async function sendWhatsAppMessage(
         }
       });
     } catch (dbError) {
+      console.log('💾 Failed to store failed message in database:', dbError instanceof Error ? dbError.message : 'Unknown DB error');
       logSecureError('Failed to store failed message', requestContext, dbError instanceof Error ? dbError : undefined);
     }
 
+    console.log('🏁 ===== WHATSAPP MESSAGE SEND FAILED =====\n');
     return { success: false, error: errorMessage };
   }
 }
