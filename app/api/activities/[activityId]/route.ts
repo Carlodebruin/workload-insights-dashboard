@@ -70,18 +70,32 @@ async function sendWhatsAppStatusNotification(
       const timeWindow = new Date(activity.timestamp.getTime() - 5 * 60 * 1000); // 5 minutes before
       const timeWindowAfter = new Date(activity.timestamp.getTime() + 5 * 60 * 1000); // 5 minutes after
       
-      const correlatedMessage = await prisma.whatsAppMessage.findFirst({
+      // First try to find by relatedActivityId (direct link)
+      let correlatedMessage = await prisma.whatsAppMessage.findFirst({
         where: {
           direction: 'inbound',
-          timestamp: {
-            gte: timeWindow,
-            lte: timeWindowAfter
-          },
-          content: {
-            contains: activity.subcategory
-          }
+          relatedActivityId: activityId
         }
       });
+
+      // If no direct link, try time correlation with broader content matching
+      if (!correlatedMessage) {
+        correlatedMessage = await prisma.whatsAppMessage.findFirst({
+          where: {
+            direction: 'inbound',
+            timestamp: {
+              gte: timeWindow,
+              lte: timeWindowAfter
+            },
+            OR: [
+              { content: { contains: activity.subcategory } },
+              { content: { contains: activity.location.replace('From WhatsApp: ', '') } },
+              { from: activity.user?.phone_number }
+            ]
+          },
+          orderBy: { timestamp: 'desc' }
+        });
+      }
 
       if (!correlatedMessage) return;
 
