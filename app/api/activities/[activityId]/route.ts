@@ -399,7 +399,7 @@ export async function PUT(
         try {
           await sendWhatsAppStatusNotification(
             activityId,
-            currentActivity.status,
+            currentActivity.status as ActivityStatus,
             data.status,
             data.resolutionNotes,
             requestContext
