@@ -138,8 +138,8 @@ async function sendStatusUpdateMessage(
       // Fallback without AI context
     }
 
-    // Add completion details if resolved/completed
-    if ((newStatus === 'Completed' || newStatus === 'Resolved') && resolutionNotes) {
+    // Add completion details if resolved
+    if (newStatus === 'Resolved' && resolutionNotes) {
       statusMessage += `✅ **Resolution:** ${resolutionNotes}\n\n`;
     }
 
