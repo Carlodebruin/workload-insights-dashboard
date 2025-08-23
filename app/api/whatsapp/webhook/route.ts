@@ -383,7 +383,9 @@ function isIncidentReport(message: WhatsAppInboundMessage): boolean {
     const text = message.text?.body.toLowerCase() || '';
     const incidentKeywords = [
       'report', 'incident', 'problem', 'issue', 'emergency',
-      'broken', 'damage', 'maintenance', 'repair', 'help'
+      'broken', 'damage', 'maintenance', 'repair', 'help',
+      'fix', 'clean', 'leak', 'window', 'door', 'light', 'toilet',
+      'urgent', 'safety', 'hazard', 'fault', 'replace', 'install'
     ];
     
     return incidentKeywords.some(keyword => text.includes(keyword));
