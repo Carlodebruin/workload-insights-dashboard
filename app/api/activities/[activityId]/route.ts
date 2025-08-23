@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
 import { NewActivityData, ActivityStatus } from '../../../../types';
 import { logSecureError, logSecureInfo, createRequestContext, extractSafeUserId } from '../../../../lib/secure-logger';
+import { whatsappConfig } from '../../../../lib/whatsapp/config';
+import { getWorkingAIProvider } from '../../../../lib/ai-factory';
 import type { Activity, ActivityUpdate, User, Category } from '@prisma/client';
 
 // Type for Activity with included relationships
@@ -31,6 +33,151 @@ type PrismaActivityUpdateData = {
 
 // CUID validation regex pattern
 const CUID_REGEX = /^c[a-z0-9]{24}$/;
+
+// WhatsApp status notification function
+async function sendWhatsAppStatusNotification(
+  activityId: string,
+  oldStatus: ActivityStatus,
+  newStatus: ActivityStatus,
+  resolutionNotes?: string | null,
+  requestContext?: any
+) {
+  try {
+    // Find the WhatsApp user who originally reported this issue
+    const originalMessage = await prisma.whatsAppMessage.findFirst({
+      where: {
+        content: {
+          contains: activityId
+        },
+        direction: 'inbound'
+      },
+      orderBy: { timestamp: 'asc' }
+    });
+
+    if (!originalMessage) {
+      // Try to find by activity creation time correlation
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: { 
+          category: true,
+          user: true 
+        }
+      });
+
+      if (!activity) return;
+
+      // Look for WhatsApp messages around the same time as activity creation
+      const timeWindow = new Date(activity.timestamp.getTime() - 5 * 60 * 1000); // 5 minutes before
+      const timeWindowAfter = new Date(activity.timestamp.getTime() + 5 * 60 * 1000); // 5 minutes after
+      
+      const correlatedMessage = await prisma.whatsAppMessage.findFirst({
+        where: {
+          direction: 'inbound',
+          timestamp: {
+            gte: timeWindow,
+            lte: timeWindowAfter
+          },
+          content: {
+            contains: activity.subcategory
+          }
+        }
+      });
+
+      if (!correlatedMessage) return;
+
+      const reporterPhone = correlatedMessage.from;
+      await sendStatusUpdateMessage(reporterPhone, activity, oldStatus, newStatus, resolutionNotes, requestContext);
+    } else {
+      const reporterPhone = originalMessage.from;
+      const activity = await prisma.activity.findUnique({
+        where: { id: activityId },
+        include: { 
+          category: true,
+          user: true 
+        }
+      });
+
+      if (!activity) return;
+      await sendStatusUpdateMessage(reporterPhone, activity, oldStatus, newStatus, resolutionNotes, requestContext);
+    }
+  } catch (error) {
+    logSecureError('Failed to send WhatsApp status notification', requestContext || {}, 
+      error instanceof Error ? error : undefined);
+  }
+}
+
+// Send WhatsApp status update message
+async function sendStatusUpdateMessage(
+  phoneNumber: string,
+  activity: any,
+  oldStatus: ActivityStatus,
+  newStatus: ActivityStatus,
+  resolutionNotes?: string | null,
+  requestContext?: any
+) {
+  try {
+    whatsappConfig.initialize();
+    const config = whatsappConfig.getConfig();
+
+    const referenceNumber = `${activity.category.name.substring(0,4).toUpperCase()}-${activity.id.slice(-4)}`;
+    
+    let statusMessage = `📋 *Status Update: ${referenceNumber}*\n\n`;
+    statusMessage += `🏷️ **Issue:** ${activity.category.name} - ${activity.subcategory}\n`;
+    statusMessage += `📍 **Location:** ${activity.location}\n`;
+    statusMessage += `📊 **Status:** ${oldStatus} → **${newStatus}**\n`;
+    statusMessage += `⏰ **Updated:** ${new Date().toLocaleString()}\n\n`;
+
+    // Add AI-generated context based on status change
+    const ai = getWorkingAIProvider();
+    const contextPrompt = `Generate a brief, professional message explaining what "${newStatus}" status means for a school maintenance issue. Keep it under 50 words and reassuring.`;
+    
+    try {
+      const aiContext = await ai.generateContent(contextPrompt, { maxTokens: 80, temperature: 0.3 });
+      statusMessage += `💡 ${aiContext.text.trim()}\n\n`;
+    } catch {
+      // Fallback without AI context
+    }
+
+    // Add completion details if resolved/completed
+    if ((newStatus === 'Completed' || newStatus === 'Resolved') && resolutionNotes) {
+      statusMessage += `✅ **Resolution:** ${resolutionNotes}\n\n`;
+    }
+
+    statusMessage += `For more details, reference: ${referenceNumber}`;
+
+    // Send WhatsApp message
+    const apiUrl = `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`;
+    
+    const requestBody = {
+      messaging_product: 'whatsapp',
+      to: phoneNumber,
+      type: 'text',
+      text: {
+        body: statusMessage
+      }
+    };
+
+    const response = await fetch(apiUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.accessToken}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(requestBody)
+    });
+
+    if (response.ok) {
+      logSecureInfo('WhatsApp status notification sent', requestContext || {}, {
+        referenceNumber,
+        newStatus,
+        phoneNumber: phoneNumber.substring(0, 5) + '***'
+      });
+    }
+  } catch (error) {
+    logSecureError('Failed to send status update message', requestContext || {}, 
+      error instanceof Error ? error : undefined);
+  }
+}
 
 // Validate ID parameter to prevent SQL injection and malformed queries
 function validateActivityId(activityId: string): { isValid: boolean; error?: NextResponse } {
@@ -246,6 +393,23 @@ export async function PUT(
         data: prismaData,
         include: { updates: true },
       });
+
+      // Send WhatsApp status notification if status changed
+      if (data.status && currentActivity.status !== data.status) {
+        try {
+          await sendWhatsAppStatusNotification(
+            activityId,
+            currentActivity.status,
+            data.status,
+            data.resolutionNotes,
+            requestContext
+          );
+        } catch (notificationError) {
+          // Log error but don't fail the update
+          logSecureError('Status notification failed', requestContext, 
+            notificationError instanceof Error ? notificationError : undefined);
+        }
+      }
     } else {
       return NextResponse.json({ error: 'Invalid update type' }, { status: 400 });
     }
