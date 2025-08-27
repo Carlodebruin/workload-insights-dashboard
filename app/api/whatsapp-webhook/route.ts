@@ -421,9 +421,9 @@ async function sendMessage(toPhone: string, message: string) {
     
     console.log(`✅ Message logged as sent: ${mockMessageId}`);
     return { success: true, messageId: mockMessageId };
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Error sending message:', error);
-    return { success: false, error: error.message };
+    return { success: false, error: error.message || 'Unknown error' };
   }
 }
 
