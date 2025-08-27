@@ -27,25 +27,38 @@ export async function GET(request: Request) {
             initialSummary: "POST with { message: 'INITIAL_SUMMARY', context: { activities, users, allCategories } }",
             chat: "POST with { history: AIMessage[], message: string, context?: any }"
         },
-        availableProviders: getAvailableProviders()
+        availableProviders: await getAvailableProviders()
     });
 }
 
-function getAvailableProviders() {
-    const providers = [];
-    if (process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY !== 'test_key_for_development_health_check') {
-        providers.push('claude');
+async function getAvailableProviders() {
+    try {
+        const configurations = await prisma.llmConfiguration.findMany({
+            where: {
+                isActive: true,
+            },
+            select: {
+                provider: true,
+            },
+        });
+        return configurations.map(c => c.provider);
+    } catch (error) {
+        console.warn('Failed to get providers from database, falling back to env vars:', error);
+        const providers = [];
+        if (process.env.CLAUDE_API_KEY && process.env.CLAUDE_API_KEY !== 'test_key_for_development_health_check') {
+            providers.push('claude');
+        }
+        if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'test_key_for_development_health_check') {
+            providers.push('gemini');
+        }
+        if (process.env.DEEPSEEK_API_KEY) {
+            providers.push('deepseek');
+        }
+        if (process.env.KIMI_API_KEY) {
+            providers.push('kimi');
+        }
+        return providers;
     }
-    if (process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'test_key_for_development_health_check') {
-        providers.push('gemini');
-    }
-    if (process.env.DEEPSEEK_API_KEY) {
-        providers.push('deepseek');
-    }
-    if (process.env.KIMI_API_KEY) {
-        providers.push('kimi');
-    }
-    return providers;
 }
 
 export async function POST(request: Request) {
