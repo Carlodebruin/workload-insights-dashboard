@@ -153,7 +153,16 @@ export async function POST(request: Request) {
                 ai = getWorkingAIProvider();
             }
             
-            const messages: AIMessage[] = [...history, { role: 'user', content: message }];
+            // Include context data in chat messages if available
+            let contextualizedMessage = message;
+            if (context && context.activities && context.users && context.allCategories) {
+                const textData = serializeActivitiesForAI(context.activities, context.users, context.allCategories);
+                if (textData !== "[]") {
+                    contextualizedMessage = `${message}\n\n[Current Dataset Context]:\n${textData}`;
+                }
+            }
+            
+            const messages: AIMessage[] = [...history, { role: 'user', content: contextualizedMessage }];
             const streamResponse = await ai.generateContentStream(messages, {
                 systemInstruction: CHAT_SYSTEM_INSTRUCTION
             });

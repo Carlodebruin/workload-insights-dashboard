@@ -274,7 +274,8 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     history: sdkHistoryRef.current,
-                    message: prompt
+                    message: prompt,
+                    context: { activities: filteredActivities, users, allCategories }
                 })
             });
 
