@@ -158,7 +158,6 @@ async function processIncidentMessage(content: string, fromPhone: string, sender
         reporterUser = await prisma.user.create({
           data: {
             name: senderName,
-            email: `whatsapp_${fromPhone.replace('+', '')}@temp.local`,
             phone_number: fromPhone,
             role: 'User'
           }
