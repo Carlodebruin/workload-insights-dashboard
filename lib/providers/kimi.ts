@@ -6,10 +6,10 @@ export class KimiProvider implements AIProvider {
   private apiKey: string;
   private baseUrl = 'https://api.moonshot.cn/v1';
 
-  constructor() {
-    const apiKey = process.env.KIMI_API_KEY;
-    if (!apiKey) throw new Error("KIMI_API_KEY not configured");
-    this.apiKey = apiKey;
+  constructor(apiKey?: string) {
+    const key = apiKey || process.env.KIMI_API_KEY;
+    if (!key) throw new Error("KIMI_API_KEY not configured properly. Please set a valid Kimi API key in your environment variables or pass it to the constructor.");
+    this.apiKey = key;
   }
 
   async generateContent(prompt: string, options?: {

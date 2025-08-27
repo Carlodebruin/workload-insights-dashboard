@@ -6,10 +6,10 @@ export class DeepSeekProvider implements AIProvider {
   private apiKey: string;
   private baseUrl = 'https://api.deepseek.com/v1';
 
-  constructor() {
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) throw new Error("DEEPSEEK_API_KEY not configured");
-    this.apiKey = apiKey;
+  constructor(apiKey?: string) {
+    const key = apiKey || process.env.DEEPSEEK_API_KEY;
+    if (!key) throw new Error("DEEPSEEK_API_KEY not configured properly. Please set a valid DeepSeek API key in your environment variables or pass it to the constructor.");
+    this.apiKey = key;
   }
 
   async generateContent(prompt: string, options?: {

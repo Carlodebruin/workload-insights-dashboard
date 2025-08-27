@@ -68,7 +68,7 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
     const [suggestions, setSuggestions] = useState<string[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [selectedProvider, setSelectedProvider] = useState<AIProviderType>('gemini');
-    const [availableProviders, setAvailableProviders] = useState<AIProviderType[]>(['gemini']);
+    const [availableProviders, setAvailableProviders] = useState<AIProviderType[]>([]);
     const [isClient, setIsClient] = useState(false);
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -368,11 +368,18 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
                     />
                 </div>
                 <div className="lg:col-span-1">
-                    <AIProviderSelector
-                        selectedProvider={selectedProvider}
-                        onProviderChange={setSelectedProvider}
-                        availableProviders={availableProviders}
-                    />
+                    {availableProviders.length > 0 ? (
+                        <AIProviderSelector
+                            selectedProvider={selectedProvider}
+                            onProviderChange={setSelectedProvider}
+                            availableProviders={availableProviders}
+                        />
+                    ) : (
+                        <div className="text-sm text-muted-foreground p-4 border border-dashed rounded-md">
+                            <p>No AI providers configured.</p>
+                            <p><a href="/admin" className="text-primary hover:underline">Configure a provider</a> in the admin settings to enable AI features.</p>
+                        </div>
+                    )}
                 </div>
             </div>
 

@@ -48,22 +48,3 @@ export const AI_PROVIDERS: Record<AIProviderType, { name: string; displayName: s
   kimi: { name: 'kimi', displayName: 'Moonshot Kimi', requiresApiKey: true },
 };
 
-export function getDefaultProvider(): AIProviderType {
-  if (process.env.CLAUDE_API_KEY) return 'claude';
-  if (process.env.DEEPSEEK_API_KEY) return 'deepseek';
-  if (process.env.KIMI_API_KEY) return 'kimi';
-  if (process.env.GEMINI_API_KEY) return 'gemini';
-  return 'gemini'; // fallback
-}
-
-export function getAvailableProviders(): AIProviderType[] {
-  return Object.keys(AI_PROVIDERS).filter(provider => {
-    switch (provider as AIProviderType) {
-      case 'gemini': return !!process.env.GEMINI_API_KEY;
-      case 'claude': return !!process.env.CLAUDE_API_KEY;
-      case 'deepseek': return !!process.env.DEEPSEEK_API_KEY;
-      case 'kimi': return !!process.env.KIMI_API_KEY;
-      default: return false;
-    }
-  }) as AIProviderType[];
-}

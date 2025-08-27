@@ -81,6 +81,17 @@ const WhatsAppConfigManagement: React.FC<WhatsAppConfigManagementProps> = ({ dat
             businessAccountId: configMap.WHATSAPP_BUSINESS_ACCOUNT_ID || '',
             webhookUrl: configMap.WHATSAPP_WEBHOOK_URL || '',
           });
+        } else {
+          // Reset form if no configs exist
+          setFormData({
+            appId: '',
+            appSecret: '',
+            accessToken: '',
+            webhookVerifyToken: '',
+            phoneNumberId: '',
+            businessAccountId: '',
+            webhookUrl: '',
+          });
         }
       }
     } catch (error) {
@@ -140,7 +151,9 @@ const WhatsAppConfigManagement: React.FC<WhatsAppConfigManagementProps> = ({ dat
         headers: {
           'Authorization': 'Bearer demo-admin-token',
           'Origin': typeof window !== 'undefined' ? window.location.origin : '',
+          'Content-Type': 'application/json',
         },
+        body: JSON.stringify(formData),
       });
 
       if (response.ok) {

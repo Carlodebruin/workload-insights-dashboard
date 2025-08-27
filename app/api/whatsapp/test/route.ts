@@ -30,25 +30,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    // Get WhatsApp configuration
-    const configs = await prisma.whatsAppConfig.findMany({
-      where: { isActive: true }
-    });
+    // Get WhatsApp configuration from request body
+    const configMap = await request.json();
 
-    if (configs.length === 0) {
-      return NextResponse.json({ 
-        error: 'WhatsApp configuration not found. Please configure the API first.' 
-      }, { status: 400 });
-    }
-
-    // Decrypt and prepare configuration
-    const configMap = configs.reduce((acc: any, config) => {
-      acc[config.key] = decryptValue(config.value);
-      return acc;
-    }, {});
-
-    const accessToken = configMap.WHATSAPP_ACCESS_TOKEN;
-    const phoneNumberId = configMap.WHATSAPP_PHONE_NUMBER_ID;
+    const accessToken = configMap.accessToken;
+    const phoneNumberId = configMap.phoneNumberId;
 
     if (!accessToken || !phoneNumberId) {
       return NextResponse.json({ 

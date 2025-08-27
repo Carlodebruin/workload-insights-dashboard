@@ -4,25 +4,27 @@ import { ClaudeProvider } from './providers/claude';
 import { DeepSeekProvider } from './providers/deepseek';
 import { KimiProvider } from './providers/kimi';
 import { MockProvider } from './providers/mock';
+import { prisma } from './prisma'; // Import prisma
+import { decrypt } from './encryption'; // Import decrypt
 
-export function createAIProvider(providerType: AIProviderType): AIProvider {
+export function createAIProvider(providerType: AIProviderType, apiKey?: string): AIProvider {
   switch (providerType) {
     case 'gemini':
-      return new GeminiProvider();
+      return new GeminiProvider(apiKey);
     case 'claude':
-      return new ClaudeProvider();
+      return new ClaudeProvider(apiKey);
     case 'deepseek':
-      return new DeepSeekProvider();
+      return new DeepSeekProvider(apiKey);
     case 'kimi':
-      return new KimiProvider();
+      return new KimiProvider(apiKey);
     default:
       throw new Error(`Unknown AI provider: ${providerType}`);
   }
 }
 
-export function createAIProviderSafe(providerType: AIProviderType): AIProvider | null {
+export function createAIProviderSafe(providerType: AIProviderType, apiKey?: string): AIProvider | null {
   try {
-    return createAIProvider(providerType);
+    return createAIProvider(providerType, apiKey);
   } catch (error) {
     console.warn(`Failed to create ${providerType} provider:`, error instanceof Error ? error.message : error);
     return null;
@@ -40,47 +42,42 @@ export async function testAIProvider(provider: AIProvider): Promise<boolean> {
   }
 }
 
-export function getWorkingAIProvider(): AIProvider {
-  // Check environment variables first to avoid creating providers with invalid keys
-  // Trim whitespace and newlines from all API keys
-  const claudeKey = process.env.CLAUDE_API_KEY?.trim();
-  const hasValidClaude = !!(claudeKey && 
-    claudeKey !== 'test_key_for_development_health_check' &&
-    claudeKey.startsWith('sk-ant-'));
-    
-  const geminiKey = process.env.GEMINI_API_KEY?.trim();
-  const hasValidGemini = !!(geminiKey && 
-    geminiKey !== 'test_key_for_development_health_check' &&
-    geminiKey.length > 20);
-    
-  const deepSeekKey = process.env.DEEPSEEK_API_KEY?.trim();
-  const hasValidDeepSeek = !!(deepSeekKey && 
-    deepSeekKey !== 'test_key_for_development_health_check');
-    
-  const kimiKey = process.env.KIMI_API_KEY?.trim();
-  const hasValidKimi = !!(kimiKey && 
-    kimiKey !== 'test_key_for_development_health_check');
+export async function getWorkingAIProvider(): Promise<AIProvider> {
+  const configurations = await prisma.llmConfiguration.findMany({
+    where: {
+      isActive: true,
+    },
+    include: {
+      apiKey: true,
+    },
+    orderBy: {
+      isDefault: 'desc',
+    },
+  });
 
-  // Try providers in order of preference
-  const providerOrder: { type: AIProviderType, hasValid: boolean }[] = [
-    { type: 'claude', hasValid: hasValidClaude },
-    { type: 'gemini', hasValid: hasValidGemini },
-    { type: 'deepseek', hasValid: hasValidDeepSeek },
-    { type: 'kimi', hasValid: hasValidKimi }
-  ];
-  
-  for (const { type, hasValid } of providerOrder) {
-    if (hasValid) {
-      const provider = createAIProviderSafe(type);
-      if (provider) {
-        console.log(`✅ Using ${type} as AI provider`);
-        return provider;
+  for (const config of configurations) {
+    let apiKey: string | undefined = undefined;
+    if (config.apiKey) {
+      try {
+        apiKey = decrypt(config.apiKey.encryptedKey);
+      } catch (e) {
+        console.warn(`Failed to decrypt API key for ${config.provider} (${config.name}):`, e);
+        continue;
+      }
+    }
+
+    const providerInstance = createAIProviderSafe(config.provider as AIProviderType, apiKey);
+    if (providerInstance) {
+      const isWorking = await testAIProvider(providerInstance);
+      if (isWorking) {
+        console.log(`✅ Using ${config.provider} as AI provider (from DB config)`);
+        return providerInstance;
       }
     }
   }
   
-  // Fallback to mock provider for development/demo
-  console.log('⚠️ No real AI providers available, using mock provider for development');
+  // Fallback to mock provider if no database-configured provider works
+  console.log('⚠️ No active or working AI providers configured in DB, using mock provider for development');
   return new MockProvider();
 }
 
@@ -92,7 +89,7 @@ export function getProviderFromRequest(request: Request): AIProviderType {
     return provider;
   }
   
-  // Default to first available provider
+  // Default to first available provider (from env vars, will be removed later)
   if (process.env.CLAUDE_API_KEY) return 'claude';
   if (process.env.DEEPSEEK_API_KEY) return 'deepseek';
   if (process.env.KIMI_API_KEY) return 'kimi';

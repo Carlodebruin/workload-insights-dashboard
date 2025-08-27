@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server';
 // Type definitions for schema validation
 import { Category } from '../../../../types';
-import { createAIProvider, getProviderFromRequest } from '../../../../lib/ai-factory';
+import { createAIProvider, getProviderFromRequest, createAIProviderSafe } from '../../../../lib/ai-factory';
+import { prisma } from '../../../../lib/prisma';
+import { decrypt } from '../../../../lib/encryption';
 
 const AI_PARSER_PROMPT = `You are a data entry bot for a school management system. Your task is to extract structured information from user messages, photos, or audio recordings about school incidents and activities.
 
@@ -22,7 +24,28 @@ export async function POST(request: Request) {
         const categories: Category[] = JSON.parse(formData.get('categories') as string);
         
         const providerType = getProviderFromRequest(request);
-        const ai = createAIProvider(providerType);
+
+        // Fetch the LLM configuration for the requested provider
+        const llmConfig = await prisma.llmConfiguration.findFirst({
+            where: {
+                provider: providerType,
+                isActive: true,
+            },
+            include: {
+                apiKey: true,
+            },
+        });
+
+        let apiKey: string | undefined = undefined;
+        if (llmConfig && llmConfig.apiKey) {
+            apiKey = decrypt(llmConfig.apiKey.encryptedKey);
+        }
+
+        const ai = createAIProviderSafe(providerType, apiKey);
+
+        if (!ai) {
+            return NextResponse.json({ error: `AI provider "${providerType}" is not configured or enabled.` }, { status: 500 });
+        }
 
         const validCategoryIds = categories.map(c => c.id);
         let prompt = AI_PARSER_PROMPT;

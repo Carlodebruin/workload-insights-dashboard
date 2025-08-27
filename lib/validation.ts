@@ -118,8 +118,8 @@ export const newGeofenceSchema = geofenceSchema.omit({ id: true });
 
 // Query parameter validation
 export const paginationSchema = z.object({
-  page: z.string().transform(val => Math.max(1, parseInt(val) || 1)),
-  limit: z.string().transform(val => Math.min(100, Math.max(1, parseInt(val) || 50))),
+  page: z.string().optional().transform(val => Math.max(1, parseInt(val || '1') || 1)),
+  limit: z.string().optional().transform(val => Math.min(100, Math.max(1, parseInt(val || '50')))),
 });
 
 export const activityFilterSchema = z.object({

@@ -4,15 +4,16 @@ import { Activity, User, Category } from '../../../../types';
 import { INITIAL_ANALYSIS_PROMPT, CHAT_SYSTEM_INSTRUCTION } from '../../../../lib/prompts';
 import { createAIProvider, getProviderFromRequest, getWorkingAIProvider, createAIProviderSafe } from '../../../../lib/ai-factory';
 import { AIMessage } from '../../../../lib/ai-providers';
+import { prisma } from '../../../../lib/prisma';
+import { decrypt } from '../../../../lib/encryption';
 
 const serializeActivitiesForAI = (activities: Activity[], users: User[], allCategories: Category[]): string => {
     if (activities.length === 0) return "[]";
-    const activitiesToProcess = activities.slice(0, 75); 
-    const serialized = activitiesToProcess.map(act => ({
+    const serialized = activities.map(act => ({
         id: act.id, staff: users.find(u => u.id === act.user_id)?.name || 'Unknown',
         category: allCategories.find(c => c.id === act.category_id)?.name || act.category_id,
         details: act.subcategory, location: act.location,
-        ...(act.notes && { notes: act.notes.substring(0, 150) }),
+        ...(act.notes && { notes: act.notes }),
         has_photo: !!act.photo_url
     }));
     return JSON.stringify(serialized, null, 2);
@@ -51,20 +52,35 @@ export async function POST(request: Request) {
     try {
         const { history, message, context } = await request.json();
         
+        const requestedProvider = getProviderFromRequest(request);
+
+        let apiKey: string | undefined = undefined;
+
+        // Fetch the LLM configuration for the requested provider
+        const llmConfig = await prisma.llmConfiguration.findFirst({
+            where: {
+                provider: requestedProvider,
+                isActive: true,
+            },
+            include: {
+                apiKey: true,
+            },
+        });
+
+        if (llmConfig && llmConfig.apiKey) {
+            apiKey = decrypt(llmConfig.apiKey.encryptedKey);
+        }
+        
         // --- Handle Initial Summary Generation ---
         if (message === "INITIAL_SUMMARY") {
             const { activities, users, allCategories } = context;
             
-            // Try to get a working AI provider with fallback
             try {
-                // First try user-specified provider, then fallback to any working provider
-                let ai: any = null;
-                const requestedProvider = getProviderFromRequest(request);
-                ai = createAIProviderSafe(requestedProvider);
+                let ai: any = createAIProviderSafe(requestedProvider, apiKey);
                 
                 if (!ai) {
                     console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
-                    ai = getWorkingAIProvider();
+                    ai = getWorkingAIProvider(); // This will use env vars, might need adjustment
                 }
                 
                 const textData = serializeActivitiesForAI(activities, users, allCategories);
@@ -89,7 +105,6 @@ export async function POST(request: Request) {
                 
                 return NextResponse.json({ ...parsedData, history: initialHistory });
             } catch (aiError) {
-                // Fallback: Generate basic analysis without AI
                 const totalActivities = activities.length;
                 const activeUsers = new Set(activities.map((a: Activity) => a.user_id)).size;
                 const categoriesUsed = new Set(activities.map((a: Activity) => a.category_id)).size;
@@ -119,9 +134,9 @@ export async function POST(request: Request) {
                     { role: 'assistant', content: analysis }
                 ];
                 
-                return NextResponse.json({ 
-                    analysis, 
-                    suggestions, 
+                return NextResponse.json({
+                    analysis,
+                    suggestions,
                     history: initialHistory,
                     fallback: true,
                     message: "AI services are not available. Showing basic analysis instead."
@@ -131,10 +146,7 @@ export async function POST(request: Request) {
 
         // --- Handle Streaming Chat ---
         try {
-            // First try user-specified provider, then fallback to any working provider
-            let ai: any = null;
-            const requestedProvider = getProviderFromRequest(request);
-            ai = createAIProviderSafe(requestedProvider);
+            let ai: any = createAIProviderSafe(requestedProvider, apiKey);
             
             if (!ai) {
                 console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
@@ -150,7 +162,6 @@ export async function POST(request: Request) {
                 headers: { 'Content-Type': 'text/plain; charset=utf-8' },
             });
         } catch (aiError) {
-            // Fallback for chat: return helpful message
             const fallbackResponse = "AI chat services are currently unavailable. Please check your API key configuration or try again later.";
             
             return new Response(fallbackResponse, {
@@ -161,7 +172,6 @@ export async function POST(request: Request) {
     } catch (error) {
         console.error("AI Chat Error on server:", error);
         
-        // Provide more specific error messages based on the error type
         let errorMessage = "Failed to communicate with AI.";
         let statusCode = 500;
         
@@ -178,7 +188,7 @@ export async function POST(request: Request) {
             }
         }
         
-        return NextResponse.json({ 
+        return NextResponse.json({
             error: errorMessage,
             details: process.env.NODE_ENV === 'development' ? (error instanceof Error ? error.message : String(error)) : undefined
         }, { status: statusCode });

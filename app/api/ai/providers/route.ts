@@ -1,20 +1,35 @@
 import { NextResponse } from 'next/server';
-import { AI_PROVIDERS, getAvailableProviders, getDefaultProvider } from '../../../../lib/ai-providers';
+import { prisma } from '../../../../lib/prisma';
+import { AI_PROVIDERS } from '../../../../lib/ai-providers';
 
 export async function GET() {
   try {
-    const availableProviders = getAvailableProviders();
-    const defaultProvider = getDefaultProvider();
+    const configurations = await prisma.llmConfiguration.findMany({
+      where: {
+        isActive: true,
+      },
+      select: {
+        provider: true,
+        isDefault: true,
+      },
+    });
+
+    const availableProviders = [...new Set(configurations.map(c => c.provider))];
     
+    let defaultProvider = configurations.find(c => c.isDefault)?.provider;
+    if (!defaultProvider && availableProviders.length > 0) {
+      defaultProvider = availableProviders[0];
+    }
+
     const providersWithDetails = availableProviders.map(provider => ({
       id: provider,
-      ...AI_PROVIDERS[provider]
+      ...AI_PROVIDERS[provider as keyof typeof AI_PROVIDERS]
     }));
 
     return NextResponse.json({
       providers: providersWithDetails,
       default: defaultProvider,
-      available: availableProviders
+      available: availableProviders,
     });
   } catch (error) {
     console.error('Error getting AI providers:', error);
