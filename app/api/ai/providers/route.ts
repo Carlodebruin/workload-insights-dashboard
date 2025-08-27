@@ -14,7 +14,7 @@ export async function GET() {
       },
     });
 
-    const availableProviders = [...new Set(configurations.map(c => c.provider))];
+    const availableProviders = Array.from(new Set(configurations.map(c => c.provider)));
     
     let defaultProvider = configurations.find(c => c.isDefault)?.provider;
     if (!defaultProvider && availableProviders.length > 0) {

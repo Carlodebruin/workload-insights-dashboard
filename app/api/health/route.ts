@@ -139,7 +139,7 @@ export async function GET(request: NextRequest) {
       // Test if AI provider is actually working
       let aiStatus: HealthStatus = 'unhealthy';
       try {
-        const aiProvider = getWorkingAIProvider();
+        const aiProvider = await getWorkingAIProvider();
         if (aiProvider.name === 'mock') {
           aiStatus = 'warning'; // Mock provider is working but not real AI
         } else {
