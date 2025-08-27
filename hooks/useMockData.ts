@@ -7,10 +7,22 @@ type AppData = {
     categories: Category[];
 };
 
-// Simplified headers - auth disabled for now
-const getAuthHeaders = () => ({
-  'Content-Type': 'application/json'
-});
+// Get auth headers from localStorage (client-side only)
+const getAuthHeaders = () => {
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json'
+  };
+  
+  // Only access localStorage on the client side
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('auth_token');
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+  }
+  
+  return headers;
+};
 
 export const useMockData = (
     data: AppData,
