@@ -21,20 +21,16 @@ interface ParseMessageOptions {
   systemInstruction?: string;
 }
 
-const DEFAULT_AI_PARSER_PROMPT = `You are a data entry bot for a school management system. Your task is to extract structured information from WhatsApp messages about school incidents and activities.
+const DEFAULT_AI_PARSER_PROMPT = `You are a school incident parser. Extract:
+- category_id: (choose appropriate ID)
+- subcategory: (brief description like "Broken Window") 
+- location: (CRITICAL: extract specific location from message. Examples: "Classroom A", "Main Office", "Laboratory". If unclear, use "General Area")
+- notes: (full message content)
 
-Based on the user message, extract and return the following information in JSON format:
-- category_id: The most appropriate category from the available options
-- subcategory: A specific subcategory or type of incident/activity
-- location: The specific location where this occurred (e.g., "Classroom A", "Laboratory", "Playground")
-- notes: Additional details or description
+Message: "{message}"
+Available categories: {categories}
 
-Be intelligent about interpreting the input. Analyze the message content and infer:
-- What type of activity or incident is being reported
-- Where it's happening based on context clues
-- What specific actions are needed
-
-Always provide reasonable defaults if information is unclear or missing.`;
+Return ONLY valid JSON. Focus on accurate location extraction.`;
 
 /**
  * Parses a WhatsApp message using AI to extract structured activity data
@@ -82,14 +78,11 @@ export async function parseWhatsAppMessage(
     const validCategoryIds = categories.map(c => c.id);
     const systemInstruction = options.systemInstruction || DEFAULT_AI_PARSER_PROMPT;
     
-    // Build the prompt with available categories
-    let prompt = `${systemInstruction}
-
-Available categories: ${categories.map(c => `${c.id} (${c.name})`).join(', ')}
-
-User message: "${message}"
-
-Please analyze this message and return structured data in the specified JSON format.`;
+    // Build the prompt using template replacement
+    const categoriesText = categories.map(c => `${c.id} (${c.name})`).join(', ');
+    const prompt = systemInstruction
+      .replace('{message}', message)
+      .replace('{categories}', categoriesText);
 
     // Define the expected JSON schema
     const schema = {

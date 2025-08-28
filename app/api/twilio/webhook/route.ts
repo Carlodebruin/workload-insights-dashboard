@@ -108,12 +108,19 @@ export async function POST(request: NextRequest) {
       logSecureError('Failed to store message', requestContext, dbError instanceof Error ? dbError : undefined);
     }
 
-    // Process message for incident creation
+    // Return immediately to prevent timeout
+    const response = NextResponse.json({ success: true, type: 'message_processed' });
+
+    // Process message asynchronously (don't await to prevent blocking response)
     if (storedMessage) {
-      await processIncidentMessage(messageContent, fromPhone, senderName, storedMessage.id, requestContext);
+      processIncidentMessage(messageContent, fromPhone, senderName, storedMessage.id, requestContext)
+        .catch(error => {
+          console.error('❌ Background processing error:', error);
+          logSecureError('Background incident processing failed', requestContext, error instanceof Error ? error : undefined);
+        });
     }
 
-    return NextResponse.json({ success: true, type: 'message_processed' });
+    return response;
 
   } catch (error) {
     logSecureError('Twilio webhook processing error', requestContext, error instanceof Error ? error : undefined);
@@ -359,7 +366,7 @@ async function sendMessage(toPhone: string, message: string) {
     console.log(`📤 Sending WhatsApp message to ${maskPhone(toPhone)}: ${message.substring(0, 50)}...`);
     
     // Check if we should use mock mode (WhatsApp Business API issues)
-    const useMockMode = process.env.TWILIO_MOCK_MODE === 'true' || true; // Always use mock for now due to API issues
+    const useMockMode = process.env.TWILIO_MOCK_MODE === 'true';
     
     if (useMockMode) {
       // Mock mode: Store message in database as successful
