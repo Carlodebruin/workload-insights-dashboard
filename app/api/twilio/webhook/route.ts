@@ -365,92 +365,38 @@ async function sendMessage(toPhone: string, message: string) {
   try {
     console.log(`📤 Sending WhatsApp message to ${maskPhone(toPhone)}: ${message.substring(0, 50)}...`);
     
-    // Check if we should use mock mode (WhatsApp Business API issues)
-    const useMockMode = process.env.TWILIO_MOCK_MODE === 'true';
+    const twilioClient = require('twilio')(
+      process.env.TWILIO_ACCOUNT_SID,
+      process.env.TWILIO_AUTH_TOKEN
+    );
+
+    const result = await twilioClient.messages.create({
+      from: 'whatsapp:+14155238886',
+      to: `whatsapp:${toPhone}`,
+      body: message
+    });
+
+    console.log(`✅ WhatsApp message sent: ${result.sid}`);
     
-    if (useMockMode) {
-      // Mock mode: Store message in database as successful
-      const mockMessageId = `MOCK_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      console.log(`📤 Mock mode: Storing message as sent with ID ${mockMessageId}`);
-      
-      await prisma.whatsAppMessage.create({
-        data: {
-          waId: mockMessageId,
-          from: process.env.WHATSAPP_PHONE_NUMBER_ID || '739347359265753',
-          to: toPhone,
-          type: 'text',
-          content: message,
-          direction: 'outbound',
-          status: 'sent',
-          timestamp: new Date(),
-          isFreeMessage: true
-        }
-      });
-      
-      console.log(`✅ Mock message logged as sent: ${mockMessageId}`);
-      return { success: true, messageId: mockMessageId };
-    } else {
-      // Real mode: Send via WhatsApp Business API
-      const result = await whatsappMessaging.sendMessage({
+    // Store successful message in database for tracking
+    await prisma.whatsAppMessage.create({
+      data: {
+        waId: result.sid,
+        from: '14155238886',
         to: toPhone,
         type: 'text',
         content: message,
-        forceImmediate: true,
-        priority: 'normal'
-      });
-      
-      if (result.success) {
-        console.log(`✅ Real WhatsApp message sent successfully: ${result.messageId}`);
-        return { success: true, messageId: result.messageId };
-      } else {
-        console.error(`❌ Failed to send real WhatsApp message: ${result.error}`);
-        
-        // Fallback to mock message
-        const fallbackId = `FALLBACK_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-        await prisma.whatsAppMessage.create({
-          data: {
-            waId: fallbackId,
-            from: process.env.WHATSAPP_PHONE_NUMBER_ID || '739347359265753',
-            to: toPhone,
-            type: 'text',
-            content: message,
-            direction: 'outbound',
-            status: 'sent',
-            timestamp: new Date(),
-            isFreeMessage: true
-          }
-        });
-        
-        console.log(`✅ Fallback message logged as sent: ${fallbackId}`);
-        return { success: true, messageId: fallbackId };
+        direction: 'outbound',
+        status: 'sent',
+        timestamp: new Date(),
+        isFreeMessage: true
       }
-    }
-  } catch (error: any) {
-    console.error('❌ Error in sendMessage function:', error);
+    });
     
-    // Ultimate fallback to mock message
-    try {
-      const fallbackId = `ERROR_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
-      await prisma.whatsAppMessage.create({
-        data: {
-          waId: fallbackId,
-          from: process.env.WHATSAPP_PHONE_NUMBER_ID || '739347359265753',
-          to: toPhone,
-          type: 'text',
-          content: message,
-          direction: 'outbound',
-          status: 'sent',
-          timestamp: new Date(),
-          isFreeMessage: true
-        }
-      });
-      
-      console.log(`✅ Error fallback message logged as sent: ${fallbackId}`);
-      return { success: true, messageId: fallbackId };
-    } catch (dbError) {
-      console.error('❌ Failed to store fallback message:', dbError);
-      return { success: false, error: error.message || 'Unknown error' };
-    }
+    return { success: true, messageId: result.sid };
+  } catch (error: any) {
+    console.error('❌ Error sending WhatsApp message:', error);
+    return { success: false, error: error.message };
   }
 }
 
