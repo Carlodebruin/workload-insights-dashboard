@@ -26,9 +26,15 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     
-    // Parse and validate pagination parameters
+    // Parse and validate pagination parameters with defaults
     const queryParams = Object.fromEntries(searchParams.entries());
-    const { page, limit } = validateQuery(paginationSchema, queryParams);
+    // Provide default values if no query parameters are present
+    const paginationParams = {
+      page: queryParams.page || '1',
+      limit: queryParams.limit || '50',
+      ...queryParams
+    };
+    const { page, limit } = validateQuery(paginationSchema, paginationParams);
     
     // Calculate skip value for pagination
     const skip = (page - 1) * limit;
