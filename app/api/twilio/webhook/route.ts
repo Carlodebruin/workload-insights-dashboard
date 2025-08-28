@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     // Handle commands first
     if (messageContent.startsWith('/')) {
       await handleCommand(messageContent, fromPhone, senderName, twilioData, requestContext);
-      return NextResponse.json({ success: true, type: 'command_processed' });
+      return new NextResponse('', { status: 200 });
     }
 
     // Create or get WhatsApp user
@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Return immediately to prevent timeout
-    const response = NextResponse.json({ success: true, type: 'message_processed' });
+    const response = new NextResponse('', { status: 200 });
 
     // Process message asynchronously (don't await to prevent blocking response)
     if (storedMessage) {
