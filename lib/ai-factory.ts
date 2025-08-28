@@ -85,15 +85,15 @@ export function getProviderFromRequest(request: Request): AIProviderType {
   const url = new URL(request.url);
   const provider = url.searchParams.get('provider') as AIProviderType;
   
-  if (provider && ['gemini', 'claude', 'deepseek', 'kimi'].includes(provider)) {
+  if (provider && ['deepseek', 'gemini', 'kimi', 'claude'].includes(provider)) {
     return provider;
   }
   
-  // Default to first available provider (from env vars, will be removed later)
-  if (process.env.CLAUDE_API_KEY) return 'claude';
+  // Default to first available provider (DeepSeek priority order)
   if (process.env.DEEPSEEK_API_KEY) return 'deepseek';
-  if (process.env.KIMI_API_KEY) return 'kimi';
   if (process.env.GEMINI_API_KEY) return 'gemini';
+  if (process.env.KIMI_API_KEY) return 'kimi';
+  if (process.env.CLAUDE_API_KEY) return 'claude';
   
-  return 'gemini'; // fallback
+  return 'deepseek'; // fallback to DeepSeek as primary
 }

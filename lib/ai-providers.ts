@@ -42,9 +42,9 @@ export interface AIProvider {
 export type AIProviderType = 'gemini' | 'claude' | 'deepseek' | 'kimi';
 
 export const AI_PROVIDERS: Record<AIProviderType, { name: string; displayName: string; requiresApiKey: boolean }> = {
-  gemini: { name: 'gemini', displayName: 'Google Gemini', requiresApiKey: true },
-  claude: { name: 'claude', displayName: 'Anthropic Claude', requiresApiKey: true },
   deepseek: { name: 'deepseek', displayName: 'DeepSeek', requiresApiKey: true },
+  gemini: { name: 'gemini', displayName: 'Google Gemini', requiresApiKey: true },
   kimi: { name: 'kimi', displayName: 'Moonshot Kimi', requiresApiKey: true },
+  claude: { name: 'claude', displayName: 'Anthropic Claude', requiresApiKey: true },
 };
 
