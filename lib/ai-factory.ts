@@ -1,11 +1,92 @@
 import { AIProvider, AIProviderType } from './ai-providers';
 import { GeminiProvider } from './providers/gemini';
 import { ClaudeProvider } from './providers/claude';
-import { DeepSeekProvider } from './providers/deepseek';
+import { DeepSeekProvider, DeepSeekAPIError, DeepSeekRateLimitError, DeepSeekTimeoutError } from './providers/deepseek';
 import { KimiProvider } from './providers/kimi';
 import { MockProvider } from './providers/mock';
 import { prisma } from './prisma'; // Import prisma
 import { decrypt } from './encryption'; // Import decrypt
+import { logger } from './logger';
+
+// Global fallback statistics
+const fallbackStats = {
+  totalFallbacks: 0,
+  deepSeekFallbacks: 0,
+  rateLimitFallbacks: 0,
+  timeoutFallbacks: 0,
+  lastFallback: null as { timestamp: Date; from: string; to: string; reason: string } | null,
+  fallbacksByProvider: new Map<AIProviderType, number>()
+};
+
+// Get fallback statistics for diagnostics
+export function getFallbackStatistics() {
+  return {
+    ...fallbackStats,
+    fallbacksByProvider: Array.from(fallbackStats.fallbacksByProvider.entries())
+  };
+}
+
+// Track fallback occurrence
+function trackFallback(fromProvider: AIProviderType, toProvider: AIProviderType, reason: string, error?: Error) {
+  fallbackStats.totalFallbacks++;
+  fallbackStats.fallbacksByProvider.set(
+    fromProvider,
+    (fallbackStats.fallbacksByProvider.get(fromProvider) || 0) + 1
+  );
+  
+  if (fromProvider === 'deepseek') {
+    fallbackStats.deepSeekFallbacks++;
+    
+    if (error instanceof DeepSeekRateLimitError) {
+      fallbackStats.rateLimitFallbacks++;
+    } else if (error instanceof DeepSeekTimeoutError) {
+      fallbackStats.timeoutFallbacks++;
+    }
+  }
+  
+  fallbackStats.lastFallback = {
+    timestamp: new Date(),
+    from: fromProvider,
+    to: toProvider,
+    reason
+  };
+  
+  logger.warn('AI provider fallback occurred', {
+    operation: 'provider_fallback'
+  }, {
+    fromProvider,
+    toProvider,
+    reason,
+    errorType: error?.name,
+    totalFallbacks: fallbackStats.totalFallbacks,
+    timestamp: new Date().toISOString()
+  });
+}
+
+// Check if an error should trigger fallback
+function shouldFallback(error: Error): boolean {
+  // Always fallback for these DeepSeek errors
+  if (error instanceof DeepSeekRateLimitError || error instanceof DeepSeekTimeoutError) {
+    return true;
+  }
+  
+  // Fallback for authentication errors (likely invalid API key)
+  if (error instanceof DeepSeekAPIError && (error.statusCode === 401 || error.statusCode === 403)) {
+    return true;
+  }
+  
+  // Fallback for server errors if they're persistent
+  if (error instanceof DeepSeekAPIError && error.statusCode >= 500) {
+    return true;
+  }
+  
+  // Fallback for network errors
+  if (error.message?.includes('Network error') || error.name === 'NetworkError') {
+    return true;
+  }
+  
+  return false;
+}
 
 export function createAIProvider(providerType: AIProviderType, apiKey?: string): AIProvider {
   switch (providerType) {
@@ -31,14 +112,45 @@ export function createAIProviderSafe(providerType: AIProviderType, apiKey?: stri
   }
 }
 
-export async function testAIProvider(provider: AIProvider): Promise<boolean> {
+export async function testAIProvider(provider: AIProvider, timeout: number = 3000): Promise<{ isWorking: boolean; error?: Error; shouldFallback?: boolean }> {
   try {
-    // Test with a very simple request
-    const response = await provider.generateContent('Test', { maxTokens: 10 });
-    return response.text.length > 0;
+    // Create a timeout promise to ensure fast failover
+    const testPromise = provider.generateContent('Test', { maxTokens: 10 });
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('Test timeout')), timeout)
+    );
+    
+    const response = await Promise.race([testPromise, timeoutPromise]) as any;
+    const isWorking = response && response.text && response.text.length > 0;
+    
+    if (isWorking) {
+      logger.info(`Provider ${provider.name} test successful`, {
+        operation: 'test_provider'
+      }, {
+        provider: provider.name,
+        responseLength: response.text?.length || 0
+      });
+    }
+    
+    return { isWorking };
   } catch (error) {
-    console.warn(`Provider ${provider.name} failed test:`, error instanceof Error ? error.message : error);
-    return false;
+    const testError = error instanceof Error ? error : new Error(String(error));
+    const shouldFallbackFlag = shouldFallback(testError);
+    
+    logger.warn(`Provider ${provider.name} failed test`, {
+      operation: 'test_provider'
+    }, {
+      provider: provider.name,
+      errorType: testError.name,
+      shouldFallback: shouldFallbackFlag,
+      errorMessage: testError.message
+    });
+    
+    return { 
+      isWorking: false, 
+      error: testError, 
+      shouldFallback: shouldFallbackFlag 
+    };
   }
 }
 
@@ -61,24 +173,145 @@ export async function getWorkingAIProvider(): Promise<AIProvider> {
       try {
         apiKey = decrypt(config.apiKey.encryptedKey);
       } catch (e) {
-        console.warn(`Failed to decrypt API key for ${config.provider} (${config.name}):`, e);
+        logger.warn(`Failed to decrypt API key for ${config.provider}`, {
+          operation: 'decrypt_api_key'
+        }, {
+          provider: config.provider,
+          configName: config.name
+        });
         continue;
       }
     }
 
     const providerInstance = createAIProviderSafe(config.provider as AIProviderType, apiKey);
     if (providerInstance) {
-      const isWorking = await testAIProvider(providerInstance);
-      if (isWorking) {
-        console.log(`✅ Using ${config.provider} as AI provider (from DB config)`);
+      const testResult = await testAIProvider(providerInstance, 3000);
+      
+      if (testResult.isWorking) {
+        logger.info(`Using ${config.provider} as primary AI provider`, {
+          operation: 'select_provider'
+        }, {
+          provider: config.provider,
+          source: 'database_config'
+        });
         return providerInstance;
+      } else if (testResult.shouldFallback && testResult.error) {
+        // Log potential fallback candidate
+        logger.warn(`Provider ${config.provider} failed but may need fallback`, {
+          operation: 'provider_evaluation'
+        }, {
+          provider: config.provider,
+          errorType: testResult.error.name,
+          shouldFallback: testResult.shouldFallback
+        });
+        
+        // Continue to try other providers for fallback
+        continue;
       }
     }
   }
   
   // Fallback to mock provider if no database-configured provider works
-  console.log('⚠️ No active or working AI providers configured in DB, using mock provider for development');
+  logger.warn('No working AI providers found, using mock provider', {
+    operation: 'fallback_to_mock'
+  }, {
+    totalConfigurations: configurations.length
+  });
   return new MockProvider();
+}
+
+// Get fallback provider when primary provider fails
+export async function getFallbackProvider(failedProvider: AIProviderType, error: Error): Promise<AIProvider | null> {
+  const startTime = Date.now();
+  
+  if (!shouldFallback(error)) {
+    logger.info('Error does not require fallback', {
+      operation: 'evaluate_fallback'
+    }, {
+      failedProvider,
+      errorType: error.name,
+      shouldFallback: false
+    });
+    return null;
+  }
+  
+  logger.warn('Attempting to find fallback provider', {
+    operation: 'find_fallback',
+    timestamp: new Date().toISOString()
+  }, {
+    failedProvider,
+    errorType: error.name
+  });
+  
+  try {
+    const configurations = await prisma.llmConfiguration.findMany({
+      where: {
+        isActive: true,
+        provider: { not: failedProvider }, // Exclude the failed provider
+      },
+      include: {
+        apiKey: true,
+      },
+      orderBy: {
+        isDefault: 'desc', // Prefer default providers for fallback
+      },
+    });
+    
+    // Test each potential fallback provider quickly (2 second timeout for fast fallback)
+    for (const config of configurations) {
+      let apiKey: string | undefined = undefined;
+      if (config.apiKey) {
+        try {
+          apiKey = decrypt(config.apiKey.encryptedKey);
+        } catch (e) {
+          continue; // Skip if can't decrypt
+        }
+      }
+      
+      const providerInstance = createAIProviderSafe(config.provider as AIProviderType, apiKey);
+      if (providerInstance) {
+        const testResult = await testAIProvider(providerInstance, 2000); // Fast timeout for fallback
+        
+        if (testResult.isWorking) {
+          const fallbackTime = Date.now() - startTime;
+          trackFallback(failedProvider, config.provider as AIProviderType, error.message, error);
+          
+          logger.info('Fallback provider found', {
+            operation: 'fallback_success',
+            timestamp: new Date().toISOString()
+          }, {
+            failedProvider,
+            fallbackProvider: config.provider,
+            fallbackTimeMs: fallbackTime,
+            errorType: error.name
+          });
+          
+          return providerInstance;
+        }
+      }
+    }
+    
+    const fallbackTime = Date.now() - startTime;
+    logger.error('No working fallback provider found', {
+      operation: 'fallback_failed',
+      timestamp: new Date().toISOString()
+    }, {
+      failedProvider,
+      fallbackTimeMs: fallbackTime,
+      testedProviders: configurations.length
+    });
+    
+    return null;
+  } catch (fallbackError) {
+    logger.error('Error during fallback provider search', {
+      operation: 'fallback_error',
+      timestamp: new Date().toISOString()
+    }, {
+      failedProvider,
+      fallbackError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError)
+    });
+    return null;
+  }
 }
 
 export function getProviderFromRequest(request: Request): AIProviderType {

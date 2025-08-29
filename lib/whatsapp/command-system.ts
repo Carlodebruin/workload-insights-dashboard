@@ -153,7 +153,7 @@ export class WhatsAppCommandSystem {
       // Check role permissions
       if (command.requiresAuth && whatsappUser.linkedUser) {
         const userRole = whatsappUser.linkedUser.role;
-        if (!command.allowedRoles.includes(userRole)) {
+        if (command.allowedRoles && !command.allowedRoles.includes(userRole)) {
           await this.sendPermissionDeniedResponse(whatsappUser.phoneNumber, commandName, userRole);
           return;
         }
@@ -258,14 +258,14 @@ export class WhatsAppCommandSystem {
   private static async handleHelpCommand(context: WhatsAppCommandContext): Promise<void> {
     const userRole = context.linkedUser?.role || 'Guest';
     const availableCommands = Array.from(this.commands.values()).filter(cmd => 
-      !cmd.requiresAuth || (context.user.isVerified && cmd.allowedRoles.includes(userRole))
+      !cmd.requiresAuth || (context.user.isVerified && cmd.allowedRoles && cmd.allowedRoles.includes(userRole))
     );
 
     let helpText = `*Available Commands for ${userRole}:*\n\n`;
     
     availableCommands.forEach(cmd => {
       helpText += `*/${cmd.command}* - ${cmd.description}\n`;
-      if (cmd.examples.length > 0) {
+      if (cmd.examples && cmd.examples.length > 0) {
         helpText += `Example: ${cmd.examples[0]}\n`;
       }
       helpText += '\n';
@@ -811,7 +811,7 @@ export class WhatsAppCommandSystem {
    */
   public static getCommandsForRole(role: string, isVerified: boolean): WhatsAppCommand[] {
     return Array.from(this.commands.values()).filter(cmd => 
-      !cmd.requiresAuth || (isVerified && cmd.allowedRoles.includes(role))
+      !cmd.requiresAuth || (isVerified && cmd.allowedRoles && cmd.allowedRoles.includes(role))
     );
   }
 }

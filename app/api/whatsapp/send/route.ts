@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { whatsappMessaging, SendMessageOptions, BulkMessageOptions } from '../../../../lib/whatsapp/messaging-service';
+import { whatsappMessaging, SendMessageOptions } from '../../../../lib/whatsapp/messaging-service';
 import { withAuth } from '../../../../lib/auth-context';
 import { logSecureInfo, logSecureError, createRequestContext } from '../../../../lib/secure-logger';
 import { z } from 'zod';
@@ -124,7 +124,7 @@ async function handleQuickResponse(body: any, requestContext: any) {
   }
 
   const { to, message, replyToMessageId } = validatedData.data;
-  const result = await whatsappMessaging.sendQuickResponse(to, message, replyToMessageId);
+  const result = await whatsappMessaging.sendQuickResponse(to, message);
 
   if (result.success) {
     logSecureInfo('WhatsApp quick response sent', {
@@ -163,28 +163,36 @@ async function handleBulkMessage(body: any, requestContext: any) {
     );
   }
 
-  const result = await whatsappMessaging.sendBulkMessages(validatedData.data);
+  // Transform bulk message data to individual SendMessageOptions
+  const messages: SendMessageOptions[] = validatedData.data.recipients.map(recipient => ({
+    to: recipient,
+    type: 'template' as const,
+    content: validatedData.data.template
+  }));
+
+  const results = await whatsappMessaging.sendBulkMessages(messages);
+
+  const successful = results.filter(r => r.success).length;
+  const failed = results.filter(r => !r.success).length;
 
   logSecureInfo('WhatsApp bulk messages processed', {
     ...requestContext,
     statusCode: 200
   }, {
-    totalRecipients: result.totalRecipients,
-    sentImmediately: result.sentImmediately,
-    scheduled: result.scheduled,
-    failed: result.failed,
-    estimatedCost: result.estimatedCost
+    totalRecipients: results.length,
+    successful,
+    failed,
+    results: results.map(r => ({ success: r.success, messageId: r.messageId, error: r.error }))
   });
 
   return NextResponse.json({
     success: true,
     summary: {
-      totalRecipients: result.totalRecipients,
-      sentImmediately: result.sentImmediately,
-      scheduled: result.scheduled,
-      failed: result.failed,
-      estimatedCost: result.estimatedCost
+      totalRecipients: results.length,
+      successful,
+      failed,
+      estimatedCost: 0 // Template messages don't have cost estimation in simplified implementation
     },
-    results: result.results
+    results: results
   });
 }
