@@ -161,6 +161,9 @@ export class WhatsAppCommandSystem {
 
       // Create command context
       const context: WhatsAppCommandContext = {
+        fromPhone: message.from,
+        senderName: whatsappUser.displayName || whatsappUser.phoneNumber,
+        messageId: message.id,
         user: whatsappUser,
         linkedUser: whatsappUser.linkedUser,
         message: {
