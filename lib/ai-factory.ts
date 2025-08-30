@@ -185,7 +185,7 @@ export async function getWorkingAIProvider(): Promise<AIProvider> {
 
     const providerInstance = createAIProviderSafe(config.provider as AIProviderType, apiKey);
     if (providerInstance) {
-      const testResult = await testAIProvider(providerInstance, 3000);
+      const testResult = await testAIProvider(providerInstance, 8000);
       
       if (testResult.isWorking) {
         logger.info(`Using ${config.provider} as primary AI provider`, {
@@ -270,7 +270,7 @@ export async function getFallbackProvider(failedProvider: AIProviderType, error:
       
       const providerInstance = createAIProviderSafe(config.provider as AIProviderType, apiKey);
       if (providerInstance) {
-        const testResult = await testAIProvider(providerInstance, 2000); // Fast timeout for fallback
+        const testResult = await testAIProvider(providerInstance, 6000); // Reasonable timeout for fallback
         
         if (testResult.isWorking) {
           const fallbackTime = Date.now() - startTime;

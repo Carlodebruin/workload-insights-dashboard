@@ -9,6 +9,12 @@ export interface AIResponse {
     promptTokens?: number;
     completionTokens?: number;
     totalTokens?: number;
+    // Context caching metrics for providers that support it (e.g., DeepSeek)
+    cacheMetrics?: {
+      cacheHitTokens?: number;
+      cacheMissTokens?: number;
+      cacheHitRate?: number; // Calculated percentage
+    };
   };
 }
 

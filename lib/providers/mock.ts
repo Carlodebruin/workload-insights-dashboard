@@ -18,29 +18,14 @@ export class MockProvider implements AIProvider {
     let mockText = '';
     
     if (prompt.toLowerCase().includes('workload') || prompt.toLowerCase().includes('summary') || prompt.toLowerCase().includes('school')) {
-      mockText = `# 🏫 School Workload Analysis (Mock AI Response)
+      mockText = `**Mock AI Analysis**: Your school management system shows active data collection with maintenance (60%), discipline (25%), and sports (15%) activities. Peak usage 8AM-12PM and 2PM-4PM.
 
-**Overview:**
-Your school management system is collecting valuable activity data. Here's what the patterns suggest:
+**Key Recommendations**: 
+• Schedule preventive maintenance
+• Support peak periods with additional staff
+• Continue WhatsApp integration
 
-## 📊 Key Insights:
-- **Activity Distribution**: Maintenance requests dominate (60%), followed by discipline incidents (25%) and sports activities (15%)
-- **Peak Times**: Most activities logged between 8 AM - 12 PM and 2 PM - 4 PM
-- **Staff Engagement**: Active logging indicates good system adoption
-- **Location Patterns**: Classrooms and playground areas show highest activity
-
-## 🎯 Recommendations:
-- **Preventive Maintenance**: Schedule regular inspections to reduce reactive maintenance
-- **Staff Training**: Provide additional support for peak activity periods  
-- **Resource Allocation**: Consider additional maintenance staff during high-activity hours
-- **Digital Integration**: WhatsApp integration is improving reporting efficiency
-
-## 📈 Success Indicators:
-- Faster incident response times through automated categorization
-- Better resource planning through activity pattern analysis
-- Improved staff coordination via structured workflows
-
-*Note: This is a mock AI analysis for development/demo purposes. In production, Claude or Gemini would provide detailed insights based on your actual school data.*`;
+*Configure real AI keys for detailed analysis.*`;
     } else if (prompt.toLowerCase().includes('json')) {
       mockText = JSON.stringify({
         analysis: "Mock AI analysis of your school workload data shows balanced distribution across maintenance, discipline, and sports activities with good staff participation.",
@@ -53,46 +38,27 @@ Your school management system is collecting valuable activity data. Here's what 
         ]
       });
     } else if (prompt.toLowerCase().includes('maintenance')) {
-      mockText = `## 🔧 Maintenance Activity Analysis
+      mockText = `**Maintenance Analysis**: Window repairs and door issues are most common. Lab equipment installations progressing well.
 
-Based on your maintenance request patterns:
+**Recommendations**: Schedule monthly inspections, create maintenance schedules, train staff on troubleshooting.
 
-**Current Status:**
-- Window repairs and door issues are most common
-- Lab equipment installations showing good progress
-- Ceiling leaks require immediate attention
-
-**Recommendations:**
-- Schedule monthly facility inspections
-- Create maintenance schedules for high-use areas
-- Train staff on basic troubleshooting
-
-This analysis would be much more detailed with real AI processing of your actual maintenance data.`;
+*Configure real AI keys for detailed analysis.*`;
     } else {
-      mockText = `I understand you're asking about: "${prompt.substring(0, 100)}${prompt.length > 100 ? '...' : ''}"
+      mockText = `**Mock AI Response**: "${prompt.substring(0, 50)}${prompt.length > 50 ? '...' : ''}"
 
-This is a mock AI response for development purposes. In a production environment with real API keys configured, this would be handled by Claude or Gemini AI for:
+This is a mock response. Configure CLAUDE_API_KEY or GEMINI_API_KEY for real AI analysis.
 
-🎓 **School-Specific Analysis:**
-- Activity pattern recognition
-- Resource optimization suggestions  
-- Staff workload balancing
-- Predictive maintenance planning
-
-💡 **To enable real AI insights:**
-1. Configure CLAUDE_API_KEY or GEMINI_API_KEY in environment
-2. Set valid API keys (not test placeholders)
-3. System will automatically use real AI providers
-
-**Mock suggestions for now:**
-- Review your current school processes
-- Look for automation opportunities in activity logging
-- Consider staff feedback for system improvements`;
+**Quick suggestions**: Review processes, automate logging, gather staff feedback.`;
     }
 
     // Handle JSON response format
     if (options?.responseFormat === 'json' && !mockText.startsWith('{')) {
       mockText = JSON.stringify({ response: mockText });
+    }
+
+    // Respect maxTokens option - truncate if too long
+    if (options?.maxTokens && mockText.length > options.maxTokens * 4) {
+      mockText = mockText.substring(0, options.maxTokens * 4) + '... [truncated]';
     }
 
     return {
@@ -137,7 +103,84 @@ This is a mock AI response for development purposes. In a production environment
     maxTokens?: number;
     temperature?: number;
   }): Promise<T> {
-    // Generate a mock structured response that matches the expected schema
+    // Handle WhatsApp message parsing schema specifically
+    if (schema.properties?.category_id && schema.properties?.subcategory && schema.properties?.location && schema.properties?.notes) {
+      // This is a WhatsApp message parsing request - analyze the message and provide appropriate response
+      const messageContent = prompt.toLowerCase();
+      let category_id = 'default';
+      let subcategory = 'General Task';
+      let location = 'Unknown Location';
+      let notes = `Mock AI parsed: ${prompt}`;
+
+      // Extract valid category from the schema enum if available
+      if (schema.properties.category_id.enum && Array.isArray(schema.properties.category_id.enum)) {
+        const validCategories = schema.properties.category_id.enum;
+        
+        // Smart categorization based on message content
+        if (messageContent.includes('broken') || messageContent.includes('repair') || messageContent.includes('fix') || 
+            messageContent.includes('maintenance') || messageContent.includes('leak') || messageContent.includes('install')) {
+          const maintenanceCategory = validCategories.find((cat: string) => cat.includes('maintenance') || cat.includes('repair'));
+          category_id = maintenanceCategory || validCategories[0];
+          
+          if (messageContent.includes('window')) subcategory = 'Window Repair';
+          else if (messageContent.includes('door')) subcategory = 'Door Repair';
+          else if (messageContent.includes('desk') || messageContent.includes('furniture')) subcategory = 'Furniture Repair';
+          else if (messageContent.includes('light') || messageContent.includes('bulb')) subcategory = 'Lighting Issue';
+          else if (messageContent.includes('water') || messageContent.includes('leak') || messageContent.includes('tap')) subcategory = 'Plumbing Issue';
+          else subcategory = 'General Maintenance';
+          
+        } else if (messageContent.includes('misbehav') || messageContent.includes('fight') || 
+                  messageContent.includes('discipline') || messageContent.includes('bullying')) {
+          const disciplineCategory = validCategories.find((cat: string) => cat.includes('discipline') || cat.includes('behavior'));
+          category_id = disciplineCategory || validCategories[0];
+          subcategory = 'Behavioral Issue';
+          
+        } else if (messageContent.includes('clean') || messageContent.includes('washing')) {
+          const maintenanceCategory = validCategories.find((cat: string) => cat.includes('maintenance') || cat.includes('repair'));
+          category_id = maintenanceCategory || validCategories[0];
+          subcategory = 'Cleaning Task';
+          
+        } else if (messageContent.includes('sport') || messageContent.includes('game') || messageContent.includes('training')) {
+          const sportsCategory = validCategories.find((cat: string) => cat.includes('sport') || cat.includes('athletic'));
+          category_id = sportsCategory || validCategories[0];
+          subcategory = 'Sports Activity';
+          
+        } else {
+          // Default to first available category
+          category_id = validCategories[0];
+          subcategory = 'General Issue';
+        }
+      }
+
+      // Extract location from message
+      if (messageContent.includes('classroom')) {
+        const classMatch = messageContent.match(/classroom\s*([a-z0-9]+)/i);
+        location = classMatch ? `Classroom ${classMatch[1].toUpperCase()}` : 'Classroom';
+      } else if (messageContent.includes('room')) {
+        const roomMatch = messageContent.match(/room\s*([a-z0-9]+)/i);
+        location = roomMatch ? `Room ${roomMatch[1].toUpperCase()}` : 'Room';
+      } else if (messageContent.includes('lab')) {
+        location = 'Laboratory';
+      } else if (messageContent.includes('playground') || messageContent.includes('field')) {
+        location = 'Playground';
+      } else if (messageContent.includes('office')) {
+        location = 'Office';
+      } else if (messageContent.includes('corridor') || messageContent.includes('hallway')) {
+        location = 'Corridor';
+      } else if (messageContent.includes('grade')) {
+        const gradeMatch = messageContent.match(/grade\s*([0-9]+)/i);
+        location = gradeMatch ? `Grade ${gradeMatch[1]} Area` : 'Grade Area';
+      }
+
+      return {
+        category_id,
+        subcategory,
+        location,
+        notes
+      } as T;
+    }
+
+    // Handle analysis and suggestions schema
     if (schema.properties?.analysis && schema.properties?.suggestions) {
       // Generate school-specific analysis based on prompt context
       let analysis = "Mock AI analysis: Your school workload data shows good distribution across team members with opportunities for optimization.";
@@ -149,32 +192,17 @@ This is a mock AI response for development purposes. In a production environment
       ];
 
       if (prompt.toLowerCase().includes('school') || prompt.toLowerCase().includes('maintenance') || prompt.toLowerCase().includes('activity')) {
-        analysis = `# 🏫 School Activity Analysis
+        analysis = `**Mock AI Analysis**: Your school management system shows good activity tracking across maintenance, discipline, and sports categories. Active staff participation with structured workflows is evident.
 
-Your school management system is effectively capturing operational data across multiple categories:
+**Key Patterns**: Maintenance activities dominate, good geographic distribution, WhatsApp integration working well.
 
-## Current Status:
-- **51 total activities** tracked across maintenance, discipline, and sports categories
-- **Active staff participation** with 5 users contributing to the system
-- **Diverse activity types** showing comprehensive school operations monitoring
-- **Recent maintenance focus** with window repairs, lab installations, and facility improvements
-
-## Key Patterns:
-- Maintenance activities dominate the workload (classroom repairs, lab equipment)
-- Geographic distribution shows activity across classrooms, lab, and campus areas  
-- Staff assignment working well with activities moving through Open → In Progress → Completed
-- WhatsApp integration successfully converting incident reports to structured activities
-
-## Optimization Opportunities:
-The data suggests good system adoption with room for enhanced workflow automation and predictive maintenance planning.`;
+**Note**: This is a mock response. Configure real AI keys for detailed analysis.`;
 
         suggestions = [
-          "Implement preventive maintenance scheduling based on activity patterns",
-          "Set up automated escalation for high-priority school incidents", 
-          "Create location-based activity clustering for facility management",
-          "Establish regular review cycles for completed activity analysis",
-          "Configure advanced WhatsApp message processing for faster incident response",
-          "Develop staff workload balancing across different activity categories"
+          "Implement preventive maintenance scheduling",
+          "Set up automated escalation for priority incidents", 
+          "Create location-based activity clustering",
+          "Configure advanced WhatsApp message processing"
         ];
       }
 

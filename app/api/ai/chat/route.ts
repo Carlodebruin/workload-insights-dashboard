@@ -25,7 +25,8 @@ export async function GET(request: Request) {
         supportedMethods: ["POST"],
         usage: {
             initialSummary: "POST with { message: 'INITIAL_SUMMARY', context: { activities, users, allCategories } }",
-            chat: "POST with { history: AIMessage[], message: string, context?: any }"
+            streamingChat: "POST with { history: AIMessage[], message: string, context?: any, stream: true }",
+            nonStreamingChat: "POST with { history: AIMessage[], message: string, context?: any, stream: false }"
         },
         availableProviders: await getAvailableProviders()
     });
@@ -63,7 +64,7 @@ async function getAvailableProviders() {
 
 export async function POST(request: Request) {
     try {
-        const { history, message, context } = await request.json();
+        const { history, message, context, stream = true } = await request.json();
         
         const requestedProvider = getProviderFromRequest(request);
 
@@ -93,7 +94,7 @@ export async function POST(request: Request) {
                 
                 if (!ai) {
                     console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
-                    ai = getWorkingAIProvider(); // This will use env vars, might need adjustment
+                    ai = await getWorkingAIProvider(); // This will use env vars, might need adjustment
                 }
                 
                 const textData = serializeActivitiesForAI(activities, users, allCategories);
@@ -109,7 +110,10 @@ export async function POST(request: Request) {
                     required: ["analysis", "suggestions"]
                 };
                 
-                const parsedData = await ai.generateStructuredContent(prompt, schema) as { analysis: string; suggestions: string[] };
+                const parsedData = await ai.generateStructuredContent(prompt, schema, {
+                    maxTokens: 500, // Limit initial summary to 500 tokens
+                    temperature: 0.7
+                }) as { analysis: string; suggestions: string[] };
                 
                 const initialHistory: AIMessage[] = [
                     { role: 'user', content: prompt },
@@ -157,13 +161,13 @@ export async function POST(request: Request) {
             }
         }
 
-        // --- Handle Streaming Chat ---
+        // --- Handle Chat (Streaming or Non-Streaming) ---
         try {
             let ai: any = createAIProviderSafe(requestedProvider, apiKey);
             
             if (!ai) {
                 console.log(`Requested provider ${requestedProvider} not available, trying fallback...`);
-                ai = getWorkingAIProvider();
+                ai = await getWorkingAIProvider();
             }
             
             // Include context data in chat messages if available
@@ -176,19 +180,131 @@ export async function POST(request: Request) {
             }
             
             const messages: AIMessage[] = [...history, { role: 'user', content: contextualizedMessage }];
-            const streamResponse = await ai.generateContentStream(messages, {
-                systemInstruction: CHAT_SYSTEM_INSTRUCTION
-            });
             
-            return new Response(streamResponse.stream, {
-                headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            });
+            if (stream) {
+                // --- Streaming Response with Server-Sent Events ---
+                const streamResponse = await ai.generateContentStream(messages, {
+                    systemInstruction: CHAT_SYSTEM_INSTRUCTION,
+                    maxTokens: 800, // Limit streaming responses to 800 tokens for better UX
+                    temperature: 0.7
+                });
+                
+                // Create SSE-formatted stream with length control
+                const sseStream = new ReadableStream({
+                    async start(controller) {
+                        const reader = streamResponse.stream.getReader();
+                        const encoder = new TextEncoder();
+                        
+                        try {
+                            // Send initial connection event
+                            controller.enqueue(encoder.encode('event: connected\n'));
+                            controller.enqueue(encoder.encode('data: {"type":"connected"}\n\n'));
+                            
+                            let accumulatedContent = '';
+                            let chunkCount = 0;
+                            const MAX_CHUNKS = 150; // Prevent runaway responses
+                            
+                            while (true) {
+                                const { done, value } = await reader.read();
+                                if (done) break;
+                                
+                                chunkCount++;
+                                if (chunkCount > MAX_CHUNKS) {
+                                    console.warn('DeepSeek streaming response exceeded maximum chunks, truncating');
+                                    break;
+                                }
+                                
+                                const chunk = new TextDecoder().decode(value);
+                                accumulatedContent += chunk;
+                                
+                                // Additional safety: Stop if accumulated content is too long
+                                if (accumulatedContent.length > 4000) {
+                                    console.warn('DeepSeek streaming response exceeded maximum length, truncating');
+                                    break;
+                                }
+                                
+                                // Send content as SSE
+                                controller.enqueue(encoder.encode('event: content\n'));
+                                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                                    type: 'content', 
+                                    content: chunk,
+                                    accumulated: accumulatedContent 
+                                })}\n\n`));
+                            }
+                            
+                            // Send completion event
+                            controller.enqueue(encoder.encode('event: complete\n'));
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                                type: 'complete', 
+                                fullContent: accumulatedContent 
+                            })}\n\n`));
+                            
+                        } catch (error) {
+                            // Send error event
+                            controller.enqueue(encoder.encode('event: error\n'));
+                            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                                type: 'error', 
+                                error: 'Stream interrupted',
+                                message: error instanceof Error ? error.message : String(error)
+                            })}\n\n`));
+                        } finally {
+                            controller.close();
+                        }
+                    }
+                });
+                
+                return new Response(sseStream, {
+                    headers: { 
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache',
+                        'Connection': 'keep-alive',
+                        'Access-Control-Allow-Origin': '*',
+                        'Access-Control-Allow-Headers': 'Cache-Control'
+                    },
+                });
+            } else {
+                // --- Non-Streaming Response ---
+                const response = await ai.generateContent(contextualizedMessage, {
+                    systemInstruction: CHAT_SYSTEM_INSTRUCTION,
+                    maxTokens: 600, // Limit non-streaming responses to 600 tokens 
+                    temperature: 0.7
+                });
+                
+                return NextResponse.json({
+                    content: response.text,
+                    usage: response.usage,
+                    history: [...messages, { role: 'assistant', content: response.text }]
+                });
+            }
         } catch (aiError) {
-            const fallbackResponse = "AI chat services are currently unavailable. Please check your API key configuration or try again later.";
-            
-            return new Response(fallbackResponse, {
-                headers: { 'Content-Type': 'text/plain; charset=utf-8' },
-            });
+            if (stream) {
+                // Return SSE error for streaming requests
+                const errorStream = new ReadableStream({
+                    start(controller) {
+                        const encoder = new TextEncoder();
+                        controller.enqueue(encoder.encode('event: error\n'));
+                        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
+                            type: 'error',
+                            error: 'AI chat services are currently unavailable',
+                            message: 'Please check your API key configuration or try again later.'
+                        })}\n\n`));
+                        controller.close();
+                    }
+                });
+                
+                return new Response(errorStream, {
+                    headers: { 
+                        'Content-Type': 'text/event-stream',
+                        'Cache-Control': 'no-cache'
+                    },
+                });
+            } else {
+                // Return JSON error for non-streaming requests
+                return NextResponse.json({
+                    error: "AI chat services are currently unavailable. Please check your API key configuration or try again later.",
+                    fallback: true
+                }, { status: 503 });
+            }
         }
 
     } catch (error) {

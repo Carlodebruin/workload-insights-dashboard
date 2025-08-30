@@ -982,7 +982,7 @@ export class DeepSeekProvider implements AIProvider {
     const requestBody = {
       model: 'deepseek-chat',
       messages,
-      max_tokens: options?.maxTokens || 4096,
+      max_tokens: Math.min(options?.maxTokens || 1000, 1000), // Cap at 1000 tokens to prevent runaway responses
       temperature: options?.temperature || 0.7,
       ...(options?.responseFormat === 'json' && { 
         response_format: { type: 'json_object' }
@@ -1103,7 +1103,7 @@ export class DeepSeekProvider implements AIProvider {
     let errorType: string | undefined;
 
     // Pre-flight rate limiting check for streaming
-    const maxTokens = options?.maxTokens || 4096;
+    const maxTokens = Math.min(options?.maxTokens || 1000, 1000); // Cap at 1000 tokens consistently
     const fullContent = (options?.systemInstruction || '') + messages.map(m => m.content).join('\n');
     const estimatedTokens = this.estimateTokenCount(fullContent) + maxTokens;
     const estimatedCost = this.estimateRequestCost(fullContent, maxTokens);
@@ -1144,7 +1144,7 @@ export class DeepSeekProvider implements AIProvider {
     const requestBody = {
       model: 'deepseek-chat',
       messages: openaiMessages,
-      max_tokens: options?.maxTokens || 4096,
+      max_tokens: Math.min(options?.maxTokens || 1000, 1000), // Cap at 1000 tokens for streaming too
       temperature: options?.temperature || 0.7,
       stream: true,
     };

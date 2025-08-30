@@ -87,6 +87,9 @@ export default function AppShell() {
   const [selectedCategory, setSelectedCategory] = useState<string>(() => getInitialFilterState().selectedCategory);
   const [dateRange, setDateRange] = useState<{ start: string; end: string }>(() => getInitialFilterState().dateRange);
   const [searchTerm, setSearchTerm] = useState<string>(() => getInitialFilterState().searchTerm);
+  
+  // --- Navigation State ---
+  const [highlightActivityId, setHighlightActivityId] = useState<string | null>(null);
 
   useEffect(() => {
     const filters = { selectedUserId, selectedCategory, dateRange, searchTerm };
@@ -196,6 +199,7 @@ export default function AppShell() {
               onDeleteActivity={handleDeleteActivity} onSaveIncident={handleSaveIncident}
               onTaskAction={handleOpenTaskModal} onAddUpdate={handleOpenUpdateModal}
               onQuickStatusChange={handleQuickStatusChange}
+              highlightActivityId={highlightActivityId || undefined}
             />;
         case 'ai-insights':
             return <AIInsightsPage 
@@ -225,6 +229,13 @@ export default function AppShell() {
                   location: `From WhatsApp: ${message.sender.name}`,
                 };
                 handleOpenLogModal(null, prefill);
+              }}
+              onNavigateToDashboard={(activityId) => {
+                // Navigate to dashboard and highlight the activity
+                setView('dashboard');
+                setHighlightActivityId(activityId);
+                // Clear highlight after a delay
+                setTimeout(() => setHighlightActivityId(null), 5000);
               }}
             />;
         default:

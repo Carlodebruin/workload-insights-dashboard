@@ -214,6 +214,7 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
                     body: JSON.stringify({
                         history: [],
                         message: "INITIAL_SUMMARY",
+                        stream: false, // SURGICAL FIX: Force non-streaming for initial summary too
                         context: { activities: filteredActivities, users, allCategories }
                     })
                 });
@@ -275,26 +276,21 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
                 body: JSON.stringify({
                     history: sdkHistoryRef.current,
                     message: prompt,
+                    stream: false, // SURGICAL FIX: Force non-streaming mode to avoid SSE parsing issues
                     context: { activities: filteredActivities, users, allCategories }
                 })
             });
 
-            if (!response.body) throw new Error("No response body");
+            if (!response.ok) throw new Error(`Server error: ${response.status}`);
             
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let currentContent = '';
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                currentContent += decoder.decode(value, { stream: true });
-                setMessages(prev => {
-                    const newMessages = [...prev];
-                    newMessages[newMessages.length - 1].content = currentContent;
-                    return newMessages;
-                });
-            }
+            const data = await response.json();
+            const currentContent = data.content || '';
+            
+            setMessages(prev => {
+                const newMessages = [...prev];
+                newMessages[newMessages.length - 1].content = currentContent;
+                return newMessages;
+            });
 
             const newModelMessage: Message = { role: 'model', content: currentContent };
             const finalMessages = [...messages, userMessage, newModelMessage];
