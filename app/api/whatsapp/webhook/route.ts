@@ -4,6 +4,7 @@ import { parseWhatsAppMessage, parseWhatsAppMessageSimple } from '../../../../li
 import { logSecureInfo, logSecureError, createRequestContext } from '../../../../lib/secure-logger';
 import { whatsappMessaging } from '../../../../lib/whatsapp/messaging-service';
 import { whatsappConfig } from '../../../../lib/whatsapp/config';
+import { withDb } from '../../../../lib/db-wrapper';
 
 const prisma = new PrismaClient();
 

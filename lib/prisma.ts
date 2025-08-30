@@ -61,7 +61,7 @@ if (process.env.NODE_ENV !== 'production') {
   });
 }
 
-// Enhanced connection pool management
+// Enhanced connection resilience utilities
 export const connectionPool = {
   testConnection: async (timeoutMs: number = 5000): Promise<boolean> => {
     try {
@@ -77,6 +77,60 @@ export const connectionPool = {
       console.error('Database connection test failed:', error);
       return false;
     }
+  },
+
+  // Retry wrapper for database operations with exponential backoff
+  withRetry: async <T>(
+    operation: () => Promise<T>, 
+    maxRetries: number = 3,
+    baseDelayMs: number = 1000
+  ): Promise<T> => {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error as Error;
+        
+        // Check if this is a connection closure error
+        const isConnectionError = (
+          lastError.message.includes('Closed') || 
+          lastError.message.includes('connection') ||
+          lastError.message.includes('ECONNRESET') ||
+          lastError.message.includes('timeout') ||
+          lastError.message.includes('ECONNREFUSED') ||
+          lastError.message.includes('Connection terminated') ||
+          (lastError as any).code === 'P1001' || // Prisma connection error
+          (lastError as any).code === 'P1017'    // Prisma connection timeout
+        );
+        
+        if (isConnectionError) {
+          console.warn(`🔄 Database operation failed (attempt ${attempt}/${maxRetries}): ${lastError.message}`);
+          
+          if (attempt < maxRetries) {
+            // Exponential backoff delay
+            const delay = baseDelayMs * Math.pow(2, attempt - 1);
+            console.log(`   Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            // Try to refresh connection
+            try {
+              await connectionPool.testConnection(2000);
+            } catch (testError) {
+              console.warn(`   Connection test failed during retry: ${testError}`);
+            }
+            
+            continue;
+          }
+        }
+        
+        // If it's not a connection error, or we've exhausted retries, throw immediately
+        throw lastError;
+      }
+    }
+    
+    throw lastError || new Error('Max retries exceeded');
   },
   
   getConnectionInfo: async (): Promise<any> => {
