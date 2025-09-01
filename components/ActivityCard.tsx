@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Activity, User, Category, ActivityStatus, ActivityUpdate } from '../types';
-import { HeartPulse, Users as UsersIcon, Building, Banknote, Wrench, Mic, CalendarClock, MapPin, ImageOff, MessageSquare, MoreVertical, Edit, Trash2, CheckCircle, Clock, GitPullRequest, UserCheck, MessageSquarePlus, Info, Paperclip } from 'lucide-react';
+import { HeartPulse, Users as UsersIcon, Building, Banknote, Wrench, Mic, CalendarClock, MapPin, ImageOff, MessageSquare, MoreVertical, Edit, Trash2, CheckCircle, Clock, GitPullRequest, UserCheck, MessageSquarePlus, Info, Paperclip, Play, AlertCircle } from 'lucide-react';
 import ImageModal from './ImageModal';
 
 interface ActivityCardProps {
@@ -13,8 +13,9 @@ interface ActivityCardProps {
   onEdit: (activity: Activity) => void;
   onDelete: (activityId: string) => void;
   onTaskAction: (activity: Activity) => void;
-  onAddUpdate: (activity: Activity) => void;
   onQuickStatusChange: (activityId: string, newStatus: ActivityStatus) => void;
+  onQuickStatusNote?: (activity: Activity, status: ActivityStatus, notePrompt: string) => void; // New: Quick status with note
+  onViewDetails: (activity: Activity) => void; // New: View task details modal
 }
 
 const CategoryIcon: React.FC<{ categoryName: string }> = ({ categoryName }) => {
@@ -78,7 +79,7 @@ const ActivityUpdateLog: React.FC<{ update: ActivityUpdate, author?: User, onIma
             <p className="text-foreground/90 mt-1">{update.notes}</p>
             {update.photo_url && (
                 <button 
-                    onClick={() => onImageClick(update.photo_url!)}
+                    onClick={(e) => { e.stopPropagation(); onImageClick(update.photo_url!); }}
                     className="flex items-center gap-1.5 mt-1.5 text-primary hover:underline"
                 >
                     <Paperclip size={12} /> View attached photo
@@ -88,12 +89,13 @@ const ActivityUpdateLog: React.FC<{ update: ActivityUpdate, author?: User, onIma
     );
 }
 
-const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUser, category, users, isHighlighted = false, onEdit, onDelete, onTaskAction, onAddUpdate, onQuickStatusChange }) => {
+const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUser, category, users, isHighlighted = false, onEdit, onDelete, onTaskAction, onQuickStatusChange, onQuickStatusNote, onViewDetails }) => {
   const { subcategory, location, timestamp, notes, photo_url, updates } = activity;
   
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [modalImageUrl, setModalImageUrl] = useState('');
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -116,18 +118,22 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
   const formattedTimestamp = new Date(timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const categoryName = category?.name || 'Uncategorized';
   
-  const cardClasses = `bg-secondary/30 border rounded-lg p-4 flex flex-col justify-between transition-all duration-500 hover:border-primary/50 relative ${isHighlighted ? "border-primary shadow-lg shadow-primary/20" : "border-border"}`;
+  const cardClasses = `bg-secondary/30 border rounded-lg p-4 flex flex-col justify-between transition-all duration-500 hover:border-primary/50 relative cursor-pointer ${isHighlighted ? "border-primary shadow-lg shadow-primary/20" : "border-border"}`;
   const actionButtonStyles = "px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors flex-1 text-center";
 
 
   return (
     <>
-      <div className={cardClasses} style={{ height: 'calc(100% - 1rem)'}}>
+      <div 
+        className={cardClasses} 
+        style={{ height: 'calc(100% - 1rem)'}}
+        onClick={() => onViewDetails(activity)}
+      >
         <div className="flex-grow flex flex-col min-h-0">
           <div className="absolute top-2 right-2 z-20">
               <button
                   ref={menuButtonRef}
-                  onClick={() => setIsMenuOpen(prev => !prev)}
+                  onClick={(e) => { e.stopPropagation(); setIsMenuOpen(prev => !prev); }}
                   className="p-1 rounded-full text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
                   aria-label="Activity options"
               >
@@ -138,17 +144,17 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                       ref={menuRef}
                       className="absolute right-0 mt-2 w-48 bg-card border border-border rounded-md shadow-lg z-30 py-1"
                   >
-                      <button onClick={() => { onAddUpdate(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
-                          <MessageSquarePlus size={14} /> Add Update
+                      <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
+                          <MessageSquarePlus size={14} /> Add Progress Note
                       </button>
-                      <button onClick={() => { onTaskAction(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
+                      <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
                           <GitPullRequest size={14} /> Task Actions
                       </button>
                       <div className="my-1 h-px bg-border" />
-                      <button onClick={() => { onEdit(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
+                      <button onClick={(e) => { e.stopPropagation(); onEdit(activity); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary">
                           <Edit size={14} /> Edit Incident
                       </button>
-                      <button onClick={() => { onDelete(activity.id); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary text-destructive">
+                      <button onClick={(e) => { e.stopPropagation(); onDelete(activity.id); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-sm flex items-center gap-2 hover:bg-secondary text-destructive">
                           <Trash2 size={14} /> Delete Incident
                       </button>
                   </div>
@@ -159,7 +165,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
             {photo_url && (
                 <div className="flex-shrink-0 w-full sm:w-24 h-24">
                     <button
-                      onClick={() => openImageModal(photo_url)}
+                      onClick={(e) => { e.stopPropagation(); openImageModal(photo_url); }}
                       className="w-full h-full block rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
                       aria-label={`View larger image for ${subcategory}`}
                     >
@@ -172,10 +178,23 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                 </div>
             )}
             <div className="flex-grow">
-                <div className="pr-8">
+                <div 
+                    className="pr-8 cursor-pointer hover:bg-secondary/20 rounded-md p-2 -m-2 transition-colors"
+                    onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
+                    title="Click to expand task details"
+                >
                     <div className="flex items-center gap-3">
                         <CategoryIcon categoryName={categoryName} />
-                        <h4 className="text-base font-semibold">{categoryName} - <span className="font-normal">{subcategory}</span></h4>
+                        <h4 className="text-base font-semibold">
+                            {/* Prioritize actual problem description (notes) over generic subcategory */}
+                            {notes && notes !== 'No additional details provided' && notes.trim() ? 
+                                (notes.length > 50 ? `${notes.substring(0, 47)}...` : notes)
+                                : subcategory === 'General Issue' ? 
+                                    `${categoryName} Task`
+                                    : subcategory
+                            }
+                        </h4>
+                        <span className="text-xs text-muted-foreground px-2 py-1 bg-secondary/50 rounded-full">{categoryName}</span>
                     </div>
                     {user && <p className="text-xs text-muted-foreground mt-1">Logged by: {user.name} ({user.role})</p>}
                 </div>
@@ -183,6 +202,35 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                   <div className="flex items-center gap-1.5"><CalendarClock className="h-3 w-3" /> {formattedTimestamp}</div>
                   <div className="flex items-center gap-1.5"><MapPin className="h-3 w-3" /> {location}</div>
                 </div>
+                
+                {isExpanded && (
+                    <div className="mt-3 p-3 bg-secondary/20 rounded-md border border-border/50">
+                        <h5 className="text-sm font-semibold text-foreground mb-2">Task Details</h5>
+                        <div className="space-y-2 text-xs">
+                            <div><strong>Status:</strong> {activity.status}</div>
+                            <div><strong>Location:</strong> {location}</div>
+                            <div><strong>Category:</strong> {categoryName}</div>
+                            <div><strong>Original Request:</strong> {subcategory}</div>
+                            {assignedUser && <div><strong>Assigned to:</strong> {assignedUser.name} ({assignedUser.role})</div>}
+                            {activity.assignment_instructions && <div><strong>Instructions:</strong> {activity.assignment_instructions}</div>}
+                            {activity.resolution_notes && <div><strong>Resolution:</strong> {activity.resolution_notes}</div>}
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }}
+                                className="px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded-md hover:bg-primary/90 transition-colors"
+                            >
+                                Manage Task
+                            </button>
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }}
+                                className="px-3 py-1.5 bg-secondary text-secondary-foreground text-xs rounded-md hover:bg-secondary/80 transition-colors"
+                            >
+                                Add Progress Note
+                            </button>
+                        </div>
+                    </div>
+                )}
             </div>
           </div>
           
@@ -211,31 +259,80 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
         </div>
         <div className="mt-3 pt-3 border-t border-border/50 space-y-3">
             <StatusBadge activity={activity} assignedUser={assignedUser} />
-            <div className="flex items-center gap-2 pt-1">
-                {activity.status === 'Unassigned' && (
-                    <>
-                        <button onClick={() => onTaskAction(activity)} className={`${actionButtonStyles} bg-primary text-primary-foreground hover:bg-primary/90`}>
-                            Assign Task
+            <div className="space-y-2 pt-1">
+                {/* Main Action Buttons */}
+                <div className="flex items-center gap-2">
+                    {activity.status === 'Unassigned' && (
+                        <>
+                            <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-primary text-primary-foreground hover:bg-primary/90`}>
+                                Assign Task
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
+                                Mark as Open
+                            </button>
+                        </>
+                    )}
+                    {(activity.status === 'Open' || activity.status === 'In Progress') && (
+                        <>
+                             <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
+                                Update / Reassign
+                            </button>
+                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Resolved'); }} className={`${actionButtonStyles} bg-green-600 text-white hover:bg-green-700`}>
+                                Close Task
+                            </button>
+                        </>
+                    )}
+                    {activity.status === 'Resolved' && (
+                        <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-yellow-500 text-white hover:bg-yellow-600 w-full`}>
+                            Reopen Task
                         </button>
-                        <button onClick={() => onQuickStatusChange(activity.id, 'Open')} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
-                            Mark as Open
-                        </button>
-                    </>
-                )}
-                {(activity.status === 'Open' || activity.status === 'In Progress') && (
-                    <>
-                         <button onClick={() => onTaskAction(activity)} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
-                            Update / Reassign
-                        </button>
-                        <button onClick={() => onQuickStatusChange(activity.id, 'Resolved')} className={`${actionButtonStyles} bg-green-600 text-white hover:bg-green-700`}>
-                            Close Task
-                        </button>
-                    </>
-                )}
-                {activity.status === 'Resolved' && (
-                    <button onClick={() => onQuickStatusChange(activity.id, 'Open')} className={`${actionButtonStyles} bg-yellow-500 text-white hover:bg-yellow-600 w-full`}>
-                        Reopen Task
-                    </button>
+                    )}
+                </div>
+                
+                {/* Quick Status Note Actions */}
+                {onQuickStatusNote && (
+                    <div className="flex items-center gap-1.5">
+                        {activity.status === 'Open' && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'In Progress', 'What are you starting to work on?'); }}
+                                className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded-md transition-colors flex items-center gap-1"
+                                title="Start work with note"
+                            >
+                                <Play size={12} />
+                                Start Work
+                            </button>
+                        )}
+                        {(activity.status === 'Open' || activity.status === 'In Progress') && (
+                            <>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, activity.status, 'What progress have you made?'); }}
+                                    className="px-2 py-1 text-xs bg-orange-500 text-white hover:bg-orange-600 rounded-md transition-colors flex items-center gap-1"
+                                    title="Add progress note"
+                                >
+                                    <MessageSquare size={12} />
+                                    Progress Note
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'Resolved', 'How was this resolved?'); }}
+                                    className="px-2 py-1 text-xs bg-green-500 text-white hover:bg-green-600 rounded-md transition-colors flex items-center gap-1"
+                                    title="Complete with note"
+                                >
+                                    <CheckCircle size={12} />
+                                    Complete
+                                </button>
+                            </>
+                        )}
+                        {activity.status === 'Resolved' && (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'Open', 'Why is this being reopened?'); }}
+                                className="px-2 py-1 text-xs bg-yellow-500 text-white hover:bg-yellow-600 rounded-md transition-colors flex items-center gap-1"
+                                title="Reopen with note"
+                            >
+                                <AlertCircle size={12} />
+                                Reopen
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
         </div>

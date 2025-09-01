@@ -102,7 +102,7 @@ const AddUpdateModal: React.FC<AddUpdateModalProps> = ({ isOpen, onClose, onSave
         
         <form onSubmit={handleSubmit} className="space-y-4">
             <div className="text-sm bg-secondary/50 p-3 rounded-md">
-                <p><span className="font-semibold text-muted-foreground">Incident:</span> {activity.subcategory}</p>
+                <p><span className="font-semibold text-muted-foreground">Incident:</span> {activity.notes && activity.notes !== 'No additional details provided' && activity.notes.trim() ? activity.notes : activity.subcategory}</p>
                 <p><span className="font-semibold text-muted-foreground">Location:</span> {activity.location}</p>
             </div>
              <div>

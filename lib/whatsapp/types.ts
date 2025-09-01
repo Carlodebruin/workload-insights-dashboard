@@ -124,4 +124,5 @@ export interface WhatsAppTemplateMessage {
   components?: WhatsAppTemplateComponent[];
   templateName?: string;
   languageCode?: string;
+  parameters?: Array<{ type: 'text' | 'currency' | 'date_time'; text: string }>;
 }

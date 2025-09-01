@@ -34,7 +34,7 @@ export class WhatsAppMessageOptimizer {
     if (this.isWithinFreeWindow(windowTracker, now)) {
       const remainingTime = this.getRemainingWindowTime(windowTracker, now);
       
-      if (windowTracker.messageCount < this.MAX_FREE_MESSAGES) {
+      if ((windowTracker.messageCount || 0) < this.MAX_FREE_MESSAGES) {
         return {
           shouldSendNow: true,
           reason: 'free_window',
@@ -92,7 +92,7 @@ export class WhatsAppMessageOptimizer {
     if (this.isWithinFreeWindow(tracker, now)) {
       return {
         ...tracker,
-        messageCount: tracker.messageCount + (direction === 'outbound' ? 1 : 0),
+        messageCount: (tracker.messageCount || 0) + (direction === 'outbound' ? 1 : 0),
         lastMessage: now
       };
     }
@@ -196,11 +196,15 @@ export class WhatsAppMessageOptimizer {
    * Create default window tracker for new phone number
    */
   private static createDefaultTracker(phoneNumber: string): MessageWindowTracker {
+    const now = new Date();
     return {
       phoneNumber,
-      windowStart: new Date(),
+      windowStartTime: now,
+      messagesInWindow: 0,
+      lastMessageAt: now,
+      windowStart: now,
       messageCount: 0,
-      lastMessage: new Date(),
+      lastMessage: now,
       isWindowActive: false
     };
   }

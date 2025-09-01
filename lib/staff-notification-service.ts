@@ -1,29 +1,21 @@
-import { prisma } from './prisma';
-// import { twilioClient } from './twilio/client';
+import { withDb } from './db-wrapper';
+import { whatsappMessaging } from './whatsapp/messaging-service';
+import { logSecureInfo, logSecureError, logSecureWarning, createRequestContext } from './secure-logger';
 
-// Mock Twilio client for build compatibility
-const twilioClient = {
-  messages: {
-    create: async (options: any) => {
-      console.log('Mock Twilio message sent:', options);
-      return { sid: 'MOCK_' + Date.now() };
-    }
-  },
-  sendWhatsAppMessage: async (to: string, message: string, options?: any) => {
-    console.log('Mock WhatsApp message sent:', { to, message, options });
-    return { 
-      success: true, 
-      messageId: 'MOCK_' + Date.now(),
-      messageSid: 'MOCK_' + Date.now(),
-      sid: 'MOCK_' + Date.now()
-    };
-  }
-};
-// import { logger } from './logger';
+// Enhanced logging for backward compatibility
 const logger = {
-  info: (msg: string, ctx?: any) => console.log(`[INFO] ${msg}`, ctx),
-  warn: (msg: string, ctx?: any) => console.warn(`[WARN] ${msg}`, ctx),
-  error: (msg: string, ctx?: any, err?: any) => console.error(`[ERROR] ${msg}`, ctx, err)
+  info: (msg: string, ctx?: any) => {
+    const context = ctx?.timestamp ? ctx : { ...ctx, timestamp: new Date().toISOString() };
+    logSecureInfo(msg, { operation: ctx?.operation || 'legacy_notification', timestamp: new Date().toISOString() }, context);
+  },
+  warn: (msg: string, ctx?: any) => {
+    const context = ctx?.timestamp ? ctx : { ...ctx, timestamp: new Date().toISOString() };
+    logSecureWarning(msg, { operation: ctx?.operation || 'legacy_notification', timestamp: new Date().toISOString() }, context);
+  },
+  error: (msg: string, ctx?: any, err?: any) => {
+    const context = ctx?.timestamp ? ctx : { ...ctx, timestamp: new Date().toISOString() };
+    logSecureError(msg, { operation: ctx?.operation || 'legacy_notification', timestamp: new Date().toISOString() }, err, context);
+  }
 };
 
 export interface NotificationResult {
@@ -39,11 +31,6 @@ export interface StaffNotificationOptions {
 }
 
 /**
- * Staff Notification Service
- * Handles sending WhatsApp notifications to staff members when tasks are assigned
- */
-
-/**
  * Send notification to assigned staff member when a task is assigned
  */
 export async function notifyStaffAssignment(
@@ -57,23 +44,25 @@ export async function notifyStaffAssignment(
       activity_id: activityId.substring(0, 8),
       assigned_user_id: assignedUserId.substring(0, 8),
       timestamp: new Date().toISOString()
-    } as any);
+    });
 
     // Fetch activity details with related data
-    const activity = await prisma.activity.findUnique({
-      where: { id: activityId },
-      include: {
-        category: { select: { name: true } },
-        assignedTo: { 
-          select: { 
-            id: true,
-            name: true, 
-            role: true,
-            phone_number: true 
-          } 
-        },
-        user: { select: { name: true } }
-      }
+    const activity = await withDb(async (prisma) => {
+      return prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          category: { select: { name: true } },
+          assignedTo: { 
+            select: { 
+              id: true,
+              name: true, 
+              role: true,
+              phone_number: true 
+            } 
+          },
+          user: { select: { name: true } }
+        }
+      });
     });
 
     if (!activity) {
@@ -82,7 +71,7 @@ export async function notifyStaffAssignment(
         operation: 'notify_staff_assignment',
         activityId,
         timestamp: new Date().toISOString()
-      } as any);
+      });
       return { success: false, error };
     }
 
@@ -92,7 +81,7 @@ export async function notifyStaffAssignment(
         operation: 'notify_staff_assignment',
         activityId: activityId.substring(0, 8),
         timestamp: new Date().toISOString()
-      } as any);
+      });
       return { success: false, error };
     }
 
@@ -105,7 +94,7 @@ export async function notifyStaffAssignment(
         staffName: activity.assignedTo.name,
         staffRole: activity.assignedTo.role,
         timestamp: new Date().toISOString()
-      } as any);
+      });
       return { success: false, error };
     }
 
@@ -118,7 +107,7 @@ export async function notifyStaffAssignment(
         staffName: activity.assignedTo.name,
         phoneLength: cleanPhone.length,
         timestamp: new Date().toISOString()
-      } as any);
+      });
       return { success: false, error };
     }
 
@@ -139,31 +128,27 @@ export async function notifyStaffAssignment(
       referenceNumber,
       messageLength: notificationMessage.length,
       timestamp: new Date().toISOString()
-    } as any);
+    });
 
-    // Send notification via Twilio
-    const sendResult = await twilioClient.sendWhatsAppMessage(
-      cleanPhone,
-      notificationMessage,
-      {
-        operation: 'staff_assignment_notification',
-        activityId: activity.id.substring(0, 8),
-        staffId: activity.assignedTo.id.substring(0, 8)
-      }
-    );
+    // Send notification via WhatsApp messaging service
+    const sendResult = await whatsappMessaging.sendMessage({
+      to: cleanPhone,
+      type: 'text',
+      content: notificationMessage
+    });
 
     if (sendResult.success) {
       logger.info('Staff assignment notification sent successfully', {
         operation: 'notify_staff_assignment',
-        messageId: sendResult.messageSid,
+        messageId: sendResult.messageId,
         staffName: activity.assignedTo.name,
         referenceNumber,
         timestamp: new Date().toISOString()
-      } as any);
+      });
 
       return {
         success: true,
-        messageId: sendResult.messageSid
+        messageId: sendResult.messageId
       };
     } else {
       logger.error('Failed to send staff assignment notification', {
@@ -172,11 +157,11 @@ export async function notifyStaffAssignment(
         staffName: activity.assignedTo.name,
         referenceNumber,
         timestamp: new Date().toISOString()
-      } as any);
+      });
 
       return {
         success: false,
-        error: 'Message send failed'
+        error: sendResult.error || 'Message send failed'
       };
     }
 
@@ -186,7 +171,7 @@ export async function notifyStaffAssignment(
       activity_id: activityId?.substring(0, 8),
       assigned_user_id: assignedUserId?.substring(0, 8),
       timestamp: new Date().toISOString()
-    } as any, error);
+    }, error);
 
     return {
       success: false,
@@ -196,234 +181,211 @@ export async function notifyStaffAssignment(
 }
 
 /**
- * Send notification when a task is reassigned to different staff member
+ * NEW: Send bidirectional update notifications
+ * Notifies both the original reporter and assigned staff when activity is updated
  */
-export async function notifyStaffReassignment(
+export async function notifyActivityUpdate(
   activityId: string,
-  previousUserId: string,
-  newUserId: string,
-  options: StaffNotificationOptions = {}
-): Promise<{ newAssignee: NotificationResult; previousAssignee?: NotificationResult }> {
+  updateAuthorId: string,
+  updateNotes: string,
+  updateType: 'progress' | 'status_change' | 'assignment' | 'completion' = 'progress'
+): Promise<{ reporterNotification?: NotificationResult; assigneeNotification?: NotificationResult; errors: string[] }> {
+  const requestContext = createRequestContext('notify_activity_update', 'POST', updateAuthorId, activityId);
+  const result = {
+    reporterNotification: undefined as NotificationResult | undefined,
+    assigneeNotification: undefined as NotificationResult | undefined,
+    errors: [] as string[]
+  };
+
   try {
-    logger.info('Starting staff reassignment notifications', {
-      operation: 'notify_staff_reassignment',
-      activityId: activityId.substring(0, 8),
-      previousUserId: previousUserId?.substring(0, 8),
-      newUserId: newUserId.substring(0, 8),
-      timestamp: new Date().toISOString()
-    } as any);
-
-    // Send notification to new assignee
-    const newAssigneeResult = await notifyStaffAssignment(activityId, newUserId, {
-      ...options,
-      customMessage: 'Task Reassigned to You'
-    } as any);
-
-    // Optionally notify previous assignee about reassignment
-    let previousAssigneeResult: NotificationResult | undefined;
-    
-    if (previousUserId) {
-      try {
-        const previousUser = await prisma.user.findUnique({
-          where: { id: previousUserId },
-          select: { name: true, phone_number: true }
-        });
-
-        if (previousUser?.phone_number) {
-          const activity = await prisma.activity.findUnique({
-            where: { id: activityId },
-            include: {
-              category: { select: { name: true } },
-              assignedTo: { select: { name: true } }
-            }
-          });
-
-          if (activity) {
-            const referenceNumber = `${activity.category?.name?.substring(0, 4).toUpperCase() || 'TASK'}-${activity.id.slice(-4)}`;
-            const reassignmentMessage = `🔄 *Task Reassignment Notice*
-
-📋 **Reference:** ${referenceNumber}
-👤 **Reassigned to:** ${activity.assignedTo?.name}
-
-This task has been reassigned to another team member. No further action required from you.
-
-Thank you for your service! 👍`;
-
-            const sendResult = await twilioClient.sendWhatsAppMessage(
-              previousUser.phone_number.replace(/[^\d+]/g, ''),
-              reassignmentMessage,
-              {
-                operation: 'staff_reassignment_notification',
-                activityId: activity.id.substring(0, 8)
-              }
-            );
-
-            previousAssigneeResult = {
-              success: sendResult.success,
-              messageId: sendResult.messageSid,
-              error: 'Message send failed'
-            };
+    // Get activity with all related users
+    const activity = await withDb(async (prisma) => {
+      return prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          category: { select: { name: true } },
+          user: { select: { id: true, name: true, phone_number: true } }, // Original reporter
+          assignedTo: { select: { id: true, name: true, phone_number: true } }, // Assigned staff
+          updates: {
+            where: { author_id: updateAuthorId },
+            orderBy: { timestamp: 'desc' },
+            take: 1,
+            select: { author_id: true, notes: true, update_type: true }
           }
         }
-      } catch (error) {
-        logger.warn('Failed to notify previous assignee about reassignment', {
-          operation: 'notify_staff_reassignment',
-          previousUserId: previousUserId.substring(0, 8),
-          timestamp: new Date().toISOString(),
-          error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    });
+
+    if (!activity) {
+      result.errors.push('Activity not found');
+      return result;
+    }
+
+    const referenceNumber = `${activity.category.name.substring(0, 4).toUpperCase()}-${activity.id.slice(-4)}`;
+    const updateAuthor = activity.user.id === updateAuthorId ? activity.user : 
+                        activity.assignedTo?.id === updateAuthorId ? activity.assignedTo : null;
+
+    // Prepare update message
+    const updateMessage = `📋 *Update: ${referenceNumber}*\n\n🏷️ **Task:** ${activity.subcategory}\n📍 **Location:** ${activity.location}\n👤 **Updated by:** ${updateAuthor?.name || 'System'}\n⏰ **Time:** ${new Date().toLocaleString()}\n\n💬 **Update:**\n${updateNotes}\n\n${updateType === 'completion' ? '✅ **Status:** Task completed' : '🔄 **Status:** In progress'}`;
+
+    // Notify original reporter if update is from assigned staff
+    if (activity.assignedTo && updateAuthorId === activity.assignedTo.id && 
+        activity.user.phone_number && activity.user.id !== updateAuthorId) {
+      
+      const reporterMessage = `${updateMessage}\n\nThank you for your patience. We'll keep you updated on progress.`;
+      
+      try {
+        const reporterResult = await whatsappMessaging.sendQuickResponse(
+          activity.user.phone_number, 
+          reporterMessage
+        );
+        result.reporterNotification = reporterResult;
+        
+        logSecureInfo('Reporter notified of activity update', requestContext, {
+          reporterId: activity.user.id.substring(0, 8),
+          updateType
         });
+      } catch (error) {
+        const errorMsg = `Failed to notify reporter: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        result.errors.push(errorMsg);
+        logSecureError('Failed to notify reporter of update', requestContext, error instanceof Error ? error : undefined);
       }
     }
 
-    return {
-      newAssignee: newAssigneeResult,
-      previousAssignee: previousAssigneeResult
-    };
+    // Notify assigned staff if update is from reporter  
+    if (activity.assignedTo && updateAuthorId === activity.user.id && 
+        activity.assignedTo.phone_number && activity.assignedTo.id !== updateAuthorId) {
+      
+      const assigneeMessage = `${updateMessage}\n\nThe reporter has provided additional information. Please review and update accordingly.`;
+      
+      try {
+        const assigneeResult = await whatsappMessaging.sendQuickResponse(
+          activity.assignedTo.phone_number,
+          assigneeMessage
+        );
+        result.assigneeNotification = assigneeResult;
+        
+        logSecureInfo('Assigned staff notified of activity update', requestContext, {
+          assigneeId: activity.assignedTo.id.substring(0, 8),
+          updateType
+        });
+      } catch (error) {
+        const errorMsg = `Failed to notify assigned staff: ${error instanceof Error ? error.message : 'Unknown error'}`;
+        result.errors.push(errorMsg);
+        logSecureError('Failed to notify assigned staff of update', requestContext, error instanceof Error ? error : undefined);
+      }
+    }
+
+    return result;
 
   } catch (error) {
-    logger.error('Staff reassignment notification error', {
-      operation: 'notify_staff_reassignment',
-      activityId: activityId?.substring(0, 8),
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-
-    return {
-      newAssignee: {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
-    };
+    const errorMsg = `Activity update notification failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    result.errors.push(errorMsg);
+    logSecureError('Activity update notification failed', requestContext, error instanceof Error ? error : undefined);
+    return result;
   }
 }
 
 /**
- * Send bulk notifications to multiple staff members (e.g., team announcements)
+ * NEW: Send status change notifications to all relevant parties
  */
-export async function notifyStaffBulk(
-  userIds: string[],
-  message: string,
-  options: { priority?: 'normal' | 'urgent'; subject?: string } = {}
-): Promise<{ success: number; failed: number; results: NotificationResult[] }> {
+export async function notifyStatusChange(
+  activityId: string,
+  oldStatus: string,
+  newStatus: string,
+  changedBy: string,
+  resolutionNotes?: string
+): Promise<{ reporterNotification?: NotificationResult; assigneeNotification?: NotificationResult; errors: string[] }> {
+  const requestContext = createRequestContext('notify_status_change', 'PUT', changedBy, activityId);
+  const result = {
+    reporterNotification: undefined as NotificationResult | undefined,
+    assigneeNotification: undefined as NotificationResult | undefined,
+    errors: [] as string[]
+  };
+
   try {
-    logger.info('Starting bulk staff notifications', {
-      operation: 'notify_staff_bulk',
-      recipientCount: userIds.length,
-      messageLength: message.length,
-      timestamp: new Date().toISOString()
-    } as any);
-
-    const results: NotificationResult[] = [];
-    let successCount = 0;
-    let failedCount = 0;
-
-    // Get all staff members
-    const allStaffMembers = await prisma.user.findMany({
-      where: { 
-        id: { in: userIds }
-      },
-      select: {
-        id: true,
-        name: true,
-        phone_number: true,
-        role: true
-      }
-    });
-
-    // Filter for staff members with valid phone numbers
-    const staffMembers = allStaffMembers.filter(member => 
-      member.phone_number && member.phone_number.trim() !== ''
-    );
-
-    const subject = options.subject || 'Team Announcement';
-    const priority = options.priority === 'urgent' ? '🚨 URGENT: ' : '';
-
-    const bulkMessage = `${priority}📢 *${subject}*
-
-${message}
-
----
-Sent to all ${options.priority === 'urgent' ? 'staff (URGENT)' : 'team members'}
-${new Date().toLocaleString()}`;
-
-    // Send notifications concurrently (but limit concurrency to avoid rate limits)
-    const batchSize = 3;
-    for (let i = 0; i < staffMembers.length; i += batchSize) {
-      const batch = staffMembers.slice(i, i + batchSize);
-      
-      const batchPromises = batch.map(async (staff) => {
-        try {
-          const cleanPhone = staff.phone_number!.replace(/[^\d+]/g, '');
-          
-          const sendResult = await twilioClient.sendWhatsAppMessage(
-            cleanPhone,
-            bulkMessage,
-            {
-              operation: 'staff_bulk_notification',
-              staffId: staff.id.substring(0, 8)
-            }
-          );
-
-          const result: NotificationResult = {
-            success: sendResult.success,
-            messageId: sendResult.messageSid,
-            error: 'Message send failed'
-          };
-
-          if (sendResult.success) {
-            successCount++;
-          } else {
-            failedCount++;
-          }
-
-          return result;
-        } catch (error) {
-          failedCount++;
-          return {
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          };
+    const activity = await withDb(async (prisma) => {
+      return prisma.activity.findUnique({
+        where: { id: activityId },
+        include: {
+          category: { select: { name: true } },
+          user: { select: { id: true, name: true, phone_number: true } },
+          assignedTo: { select: { id: true, name: true, phone_number: true } }
         }
       });
+    });
 
-      const batchResults = await Promise.all(batchPromises);
-      results.push(...batchResults);
+    if (!activity) {
+      result.errors.push('Activity not found');
+      return result;
+    }
 
-      // Small delay between batches to be respectful to API rate limits
-      if (i + batchSize < staffMembers.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
+    const referenceNumber = `${activity.category.name.substring(0, 4).toUpperCase()}-${activity.id.slice(-4)}`;
+    
+    let statusMessage = `📊 *Status Update: ${referenceNumber}*\n\n🏷️ **Task:** ${activity.subcategory}\n📍 **Location:** ${activity.location}\n📈 **Status:** ${oldStatus} → **${newStatus}**\n⏰ **Updated:** ${new Date().toLocaleString()}\n\n`;
+
+    // Add context based on status change
+    if (newStatus === 'Resolved') {
+      statusMessage += '✅ **Task Completed!**\n';
+      if (resolutionNotes) {
+        statusMessage += `💡 **Resolution:** ${resolutionNotes}\n`;
+      }
+      statusMessage += '\nThank you for your patience. The issue has been resolved.';
+    } else if (newStatus === 'In Progress') {
+      statusMessage += '🔄 **Work Started**\n\nOur team is now working on this issue. You\'ll receive updates as progress is made.';
+    } else if (newStatus === 'Open') {
+      statusMessage += '📋 **Task Opened**\n\nThis issue has been logged and will be assigned to a team member soon.';
+    }
+
+    // Notify original reporter
+    if (activity.user.phone_number && activity.user.id !== changedBy) {
+      try {
+        const reporterResult = await whatsappMessaging.sendQuickResponse(
+          activity.user.phone_number,
+          statusMessage
+        );
+        result.reporterNotification = reporterResult;
+        
+        logSecureInfo('Reporter notified of status change', requestContext, {
+          reporterId: activity.user.id.substring(0, 8),
+          oldStatus,
+          newStatus
+        });
+      } catch (error) {
+        result.errors.push(`Failed to notify reporter: ${error instanceof Error ? error.message : 'Unknown error'}`);
       }
     }
 
-    logger.info('Bulk staff notifications completed', {
-      operation: 'notify_staff_bulk',
-      totalSent: successCount,
-      totalFailed: failedCount,
-      timestamp: new Date().toISOString()
-    } as any);
+    // Notify assigned staff if different from person who changed status
+    if (activity.assignedTo?.phone_number && activity.assignedTo.id !== changedBy) {
+      try {
+        const assigneeMessage = newStatus === 'Resolved' ? 
+          `✅ **Task Marked Complete: ${referenceNumber}**\n\n🏷️ **Task:** ${activity.subcategory}\n📍 **Location:** ${activity.location}\n\n${resolutionNotes ? `💡 **Resolution:** ${resolutionNotes}\n\n` : ''}Great work completing this task!` :
+          statusMessage;
 
-    return {
-      success: successCount,
-      failed: failedCount,
-      results
-    };
+        const assigneeResult = await whatsappMessaging.sendQuickResponse(
+          activity.assignedTo.phone_number,
+          assigneeMessage
+        );
+        result.assigneeNotification = assigneeResult;
+        
+        logSecureInfo('Assigned staff notified of status change', requestContext, {
+          assigneeId: activity.assignedTo.id.substring(0, 8),
+          oldStatus,
+          newStatus
+        });
+      } catch (error) {
+        result.errors.push(`Failed to notify assigned staff: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    return result;
 
   } catch (error) {
-    logger.error('Bulk staff notification error', {
-      operation: 'notify_staff_bulk',
-      recipientCount: userIds.length,
-      timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : 'Unknown error'
-    });
-
-    return {
-      success: 0,
-      failed: userIds.length,
-      results: [{
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }]
-    };
+    const errorMsg = `Status change notification failed: ${error instanceof Error ? error.message : 'Unknown error'}`;
+    result.errors.push(errorMsg);
+    logSecureError('Status change notification failed', requestContext, error instanceof Error ? error : undefined);
+    return result;
   }
 }
 
@@ -438,13 +400,14 @@ function buildStaffNotificationMessage(
   const priorityPrefix = options.priority === 'urgent' ? '🚨 URGENT: ' : '';
   const customTitle = options.customMessage || 'New Task Assignment';
   
-  let message = `${priorityPrefix}🎯 *${customTitle}*
+  let message = `${priorityPrefix}🎯 *${customTitle}*\n\n📋 **Reference:** ${referenceNumber}\n🏷️ **Category:** ${activity.category?.name} - ${activity.subcategory}\n📍 **Location:** ${activity.location}\n👤 **Reported by:** ${activity.user?.name}\n📅 **Created:** ${new Date(activity.timestamp).toLocaleString()}`;
 
-📋 **Reference:** ${referenceNumber}
-🏷️ **Category:** ${activity.category?.name} - ${activity.subcategory}
-📍 **Location:** ${activity.location}
-👤 **Reported by:** ${activity.user?.name}
-📅 **Created:** ${new Date(activity.timestamp).toLocaleString()}`;
+  // Add deadline info if present
+  if (activity.deadline_date) {
+    const deadline = new Date(activity.deadline_date);
+    const isOverdue = activity.is_overdue;
+    message += `\n⏰ **Deadline:** ${deadline.toLocaleString()}${isOverdue ? ' ⚠️ OVERDUE' : ''}`;
+  }
 
   // Add assignment instructions if available
   if (activity.assignment_instructions) {
@@ -458,14 +421,7 @@ function buildStaffNotificationMessage(
 
   // Add response instructions if enabled
   if (options.includeInstructions !== false) {
-    message += `
-
-🔧 **Next Steps:**
-• Reply with "Starting" to acknowledge
-• Reply with "Update: [message]" for progress updates  
-• Reply with "Complete" when finished
-
-📞 Need help? Contact your supervisor or reply with any questions.`;
+    message += `\n\n🔧 **Next Steps:**\n• Reply with "Starting" to acknowledge\n• Reply with "Update: [message]" for progress updates\n• Reply with "Complete" when finished\n\n📞 Need help? Contact your supervisor or reply with any questions.`;
   }
 
   return message;
@@ -502,4 +458,3 @@ export function formatPhoneNumber(phoneNumber: string): string {
   
   return cleaned;
 }
-

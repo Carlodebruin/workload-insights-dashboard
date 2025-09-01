@@ -21,16 +21,60 @@ interface ParseMessageOptions {
   systemInstruction?: string;
 }
 
-const DEFAULT_AI_PARSER_PROMPT = `You are a school incident parser. Extract:
-- category_id: (choose appropriate ID)
-- subcategory: (brief description like "Broken Window") 
-- location: (CRITICAL: extract specific location from message. Examples: "Classroom A", "Main Office", "Laboratory". If unclear, use "General Area")
-- notes: (full message content)
+const DEFAULT_AI_PARSER_PROMPT = `You are an expert school incident parser. Use Chain-of-Thought reasoning to accurately categorize and extract information from messages.
+
+STEP-BY-STEP ANALYSIS PROCESS:
+1. READ the message carefully and identify key details
+2. ANALYZE the type of incident/activity described
+3. DETERMINE the most appropriate category from available options
+4. EXTRACT specific location information
+5. FORMULATE a clear subcategory description
+
+CATEGORY REASONING EXAMPLES:
+
+MAINTENANCE/REPAIR INCIDENTS:
+- Keywords: broken, repair, fix, leak, damage, install, maintenance
+- Think: "Is something physically broken or needing repair?"
+- Examples: "Broken desk" → Maintenance, "Furniture Repair", specific location
+- Examples: "Water leak" → Maintenance, "Plumbing Issue", specific location
+
+BEHAVIORAL/DISCIPLINE INCIDENTS:
+- Keywords: misbehaving, fighting, bullying, discipline, behavior issues
+- Think: "Does this involve student conduct or discipline?"
+- Examples: "Student fighting" → Discipline, "Physical Altercation", specific location
+
+ACADEMIC/EDUCATIONAL ACTIVITIES:
+- Keywords: class, lesson, exam, assignment, academic
+- Think: "Is this related to teaching and learning?"
+- Examples: "Exam supervision" → Academic, "Test Administration", specific location
+
+ADMINISTRATIVE TASKS:
+- Keywords: meeting, paperwork, registration, administration
+- Think: "Is this related to school administration or office work?"
+- Examples: "Parent meeting" → Administrative, "Parent Conference", specific location
+
+SPORTS/RECREATIONAL ACTIVITIES:
+- Keywords: sport, game, match, training, physical education
+- Think: "Is this related to sports or recreational activities?"
+- Examples: "Soccer practice" → Sports, "Training Session", specific location
+
+LOCATION EXTRACTION GUIDELINES:
+- PRIORITIZE specific mentions: "Classroom A", "Room 101", "Main Office"
+- RECOGNIZE common areas: "playground", "laboratory", "library", "gymnasium"
+- INFER from context: "in grade 2" suggests "Grade 2 Classroom"
+- DEFAULT to "General Area" only if location is truly unclear
+
+REASONING PROCESS:
+Think through each message step-by-step:
+1. What is the main issue or activity?
+2. Which category best fits this type of incident?
+3. What specific location is mentioned or can be inferred?
+4. How should I describe the subcategory clearly and concisely?
 
 Message: "{message}"
 Available categories: {categories}
 
-Return ONLY valid JSON. Focus on accurate location extraction.`;
+Use your reasoning process and return ONLY valid JSON with your final categorization.`;
 
 /**
  * Parses a WhatsApp message using AI to extract structured activity data
@@ -195,6 +239,79 @@ function validateAndSanitizeParsedData(
 }
 
 /**
+ * Generates a smart subcategory from message content
+ * Converts messages like "clean classroom" into "Clean Classroom"
+ */
+function generateSmartSubcategory(message: string): string {
+  // Clean up the message
+  let cleaned = message.trim();
+  
+  // Remove common prefixes/phrases
+  const prefixesToRemove = [
+    'please ', 'can you ', 'need to ', 'help with ', 'urgent ', 'asap ',
+    'hello ', 'hi ', 'hey ', 'excuse me ', 'sorry ', 'thanks '
+  ];
+  
+  for (const prefix of prefixesToRemove) {
+    if (cleaned.toLowerCase().startsWith(prefix)) {
+      cleaned = cleaned.substring(prefix.length).trim();
+    }
+  }
+  
+  // Remove common suffixes
+  const suffixesToRemove = [
+    ' please', ' thanks', ' thank you', ' asap', ' urgently', ' now'
+  ];
+  
+  for (const suffix of suffixesToRemove) {
+    if (cleaned.toLowerCase().endsWith(suffix)) {
+      cleaned = cleaned.substring(0, cleaned.length - suffix.length).trim();
+    }
+  }
+  
+  // Smart task title generation based on content analysis
+  const lowerCleaned = cleaned.toLowerCase();
+  
+  // Specific task patterns for better titles
+  if (lowerCleaned.includes('clean') || lowerCleaned.includes('washing')) {
+    if (lowerCleaned.includes('toilet') || lowerCleaned.includes('bathroom')) return 'Clean Toilet';
+    if (lowerCleaned.includes('classroom') || lowerCleaned.includes('class')) return 'Clean Classroom';
+    if (lowerCleaned.includes('window')) return 'Clean Windows';
+    if (lowerCleaned.includes('floor')) return 'Clean Floor';
+    return 'Cleaning Task';
+  }
+  
+  if (lowerCleaned.includes('broken') || lowerCleaned.includes('fix') || lowerCleaned.includes('repair')) {
+    if (lowerCleaned.includes('door')) return 'Fix Door';
+    if (lowerCleaned.includes('window')) return 'Fix Window';
+    if (lowerCleaned.includes('desk') || lowerCleaned.includes('table')) return 'Fix Furniture';
+    if (lowerCleaned.includes('light') || lowerCleaned.includes('bulb')) return 'Fix Lighting';
+    if (lowerCleaned.includes('tap') || lowerCleaned.includes('water') || lowerCleaned.includes('leak')) return 'Fix Plumbing';
+    return 'Repair Task';
+  }
+  
+  if (lowerCleaned.includes('install') || lowerCleaned.includes('setup') || lowerCleaned.includes('mount')) {
+    return 'Installation Task';
+  }
+  
+  // If too long, take first meaningful part
+  if (cleaned.length > 35) {
+    const words = cleaned.split(' ');
+    if (words.length > 5) {
+      cleaned = words.slice(0, 5).join(' ') + '...';
+    }
+  }
+  
+  // Convert to title case
+  const titleCase = cleaned.split(' ')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ');
+  
+  // Return meaningful title or fallback
+  return titleCase.length > 3 ? titleCase : 'General Task';
+}
+
+/**
  * Creates fallback activity data when AI parsing fails
  */
 function createFallbackActivityData(message: string, categories: Category[]): ParsedActivityData {
@@ -206,7 +323,7 @@ function createFallbackActivityData(message: string, categories: Category[]): Pa
   // Simple keyword-based fallback logic
   const lowerMessage = message.toLowerCase();
   let category_id = categories[0]?.id; // Default to first category
-  let subcategory = 'General Issue';
+  let subcategory = generateSmartSubcategory(message);
   let location = 'Unknown Location';
 
   // Try to identify category based on keywords
@@ -221,14 +338,13 @@ function createFallbackActivityData(message: string, categories: Category[]): Pa
     );
     if (maintenanceCategory) {
       category_id = maintenanceCategory.id;
+      // Use smart subcategory but add context if specific items detected
       if (lowerMessage.includes('desk') || lowerMessage.includes('chair')) {
-        subcategory = 'Furniture Repair';
+        subcategory = subcategory.includes('Desk') || subcategory.includes('Chair') ? subcategory : `${subcategory} (Furniture)`;
       } else if (lowerMessage.includes('window') || lowerMessage.includes('door')) {
-        subcategory = 'Building Maintenance';
+        subcategory = subcategory.includes('Window') || subcategory.includes('Door') ? subcategory : `${subcategory} (Building)`;
       } else if (lowerMessage.includes('light') || lowerMessage.includes('electrical')) {
-        subcategory = 'Electrical Issue';
-      } else {
-        subcategory = 'General Repair';
+        subcategory = subcategory.includes('Light') || subcategory.includes('Electric') ? subcategory : `${subcategory} (Electrical)`;
       }
     }
   } else if (disciplineKeywords.some(keyword => lowerMessage.includes(keyword))) {
@@ -238,7 +354,7 @@ function createFallbackActivityData(message: string, categories: Category[]): Pa
     );
     if (disciplineCategory) {
       category_id = disciplineCategory.id;
-      subcategory = 'Student Behavior';
+      // Keep smart subcategory for discipline issues
     }
   } else if (sportsKeywords.some(keyword => lowerMessage.includes(keyword))) {
     const sportsCategory = categories.find(c => 
@@ -247,7 +363,7 @@ function createFallbackActivityData(message: string, categories: Category[]): Pa
     );
     if (sportsCategory) {
       category_id = sportsCategory.id;
-      subcategory = 'Sports Activity';
+      // Keep smart subcategory for sports activities
     }
   }
 

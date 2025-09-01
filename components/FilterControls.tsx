@@ -68,7 +68,7 @@ const FilterControls: React.FC<FilterControlsProps> = ({
             <input
               id="search-filter"
               type="text"
-              placeholder="Search notes, subcategory..."
+              placeholder="Search descriptions, location, staff, category..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className={inputStyles}

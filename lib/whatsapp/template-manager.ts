@@ -420,6 +420,10 @@ export class WhatsAppTemplateManager {
     parameters: Array<{ type: 'text' | 'currency' | 'date_time'; text: string }>
   ): WhatsAppTemplateMessage {
     return {
+      name: templateName,
+      language: {
+        code: 'en'
+      },
       templateName,
       languageCode: 'en', // Default to English
       parameters

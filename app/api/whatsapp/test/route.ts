@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { PrismaClient } from '@prisma/client';
+import { prisma } from '../../../../lib/prisma';
 import CryptoJS from 'crypto-js';
-
-const prisma = new PrismaClient();
 
 // Get encryption key from environment
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production';
@@ -57,10 +55,19 @@ export async function POST(request: NextRequest) {
       const errorData = await response.json().catch(() => ({}));
       console.error('WhatsApp API test failed:', errorData);
       
+      // Enhanced error parsing for Facebook API responses
+      const errorMessage = errorData.error?.message || errorData.message || 'Unknown error';
+      const errorType = errorData.error?.type || 'Unknown';
+      const errorCode = errorData.error?.code || response.status;
+      
       return NextResponse.json({ 
         error: 'WhatsApp API connection failed',
-        details: errorData.error?.message || 'Unknown error',
-        status: response.status
+        details: errorMessage,
+        type: errorType,
+        code: errorCode,
+        status: response.status,
+        // Include full error for debugging in development
+        ...(process.env.NODE_ENV === 'development' && { fullError: errorData })
       }, { status: 400 });
     }
 

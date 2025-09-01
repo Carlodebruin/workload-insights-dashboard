@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { User, Activity, Category, NewActivityData, ActivityStatus } from '../types';
 import { exportToCsv, parseDateStringAsLocal } from '../lib/utils';
 import FilterControls from './FilterControls';
@@ -29,8 +29,10 @@ interface DashboardProps {
   onDeleteActivity: (activityId: string) => void;
   onSaveIncident: (data: NewActivityData) => Promise<Activity | null>;
   onTaskAction: (activity: Activity) => void;
-  onAddUpdate: (activity: Activity) => void;
   onQuickStatusChange: (activityId: string, newStatus: ActivityStatus) => void;
+  onQuickStatusNote?: (activity: Activity, status: ActivityStatus, notePrompt: string) => void; // New: Quick status with note
+  onViewDetails: (activity: Activity) => void; // New: View task details modal
+  highlightActivityId?: string;
 }
 
 const Dashboard: React.FC<DashboardProps> = ({
@@ -52,8 +54,10 @@ const Dashboard: React.FC<DashboardProps> = ({
   onDeleteActivity,
   onSaveIncident,
   onTaskAction,
-  onAddUpdate,
   onQuickStatusChange,
+  onQuickStatusNote,
+  onViewDetails,
+  highlightActivityId,
 }) => {
   const { addToast } = useToast();
   const [selectedHour, setSelectedHour] = useState<number | null>(null);
@@ -61,6 +65,13 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'open'>('all');
   const [viewTab, setViewTab] = useState<'all' | 'mytasks'>('all');
   const feedContainerRef = useRef<HTMLDivElement>(null);
+
+  // Handle external activity highlighting (e.g., from WhatsApp navigation)
+  useEffect(() => {
+    if (highlightActivityId && activities.some(a => a.id === highlightActivityId)) {
+      highlightAndScroll(highlightActivityId);
+    }
+  }, [highlightActivityId, activities]);
 
   const baseFilteredActivities = useMemo(() => {
     const startDate = parseDateStringAsLocal(dateRange.start);
@@ -91,7 +102,16 @@ const Dashboard: React.FC<DashboardProps> = ({
         const inSubcategory = activity.subcategory.toLowerCase().includes(lowerCaseSearchTerm);
         const inNotes = activity.notes?.toLowerCase().includes(lowerCaseSearchTerm) ?? false;
         const inLocation = activity.location.toLowerCase().includes(lowerCaseSearchTerm);
-        return inSubcategory || inNotes || inLocation;
+        
+        // Also search in category name and reporter name for better discoverability
+        const category = allCategories.find(c => c.id === activity.category_id);
+        const inCategory = category?.name.toLowerCase().includes(lowerCaseSearchTerm) ?? false;
+        const reporter = users.find(u => u.id === activity.user_id);
+        const inReporter = reporter?.name.toLowerCase().includes(lowerCaseSearchTerm) ?? false;
+        const assignedUser = users.find(u => u.id === activity.assigned_to_user_id);
+        const inAssignedUser = assignedUser?.name.toLowerCase().includes(lowerCaseSearchTerm) ?? false;
+        
+        return inSubcategory || inNotes || inLocation || inCategory || inReporter || inAssignedUser;
       })
       .filter(activity => {
         if (filterStatus === 'all') return true;
@@ -138,13 +158,22 @@ const Dashboard: React.FC<DashboardProps> = ({
         peakHour = `${peakHourNumber}:00 - ${peakHourNumber + 1}:00`;
     }
 
+    // Make KPI calculations consistent - all use finalFilteredActivities or all use activities
+    // For filtered view: show filtered counts; for unfiltered view: show global counts
+    const useFilteredData = selectedCategory !== 'all' || selectedUserId !== 'all' || searchTerm || selectedHour !== null;
+    
+    const dataSource = useFilteredData ? finalFilteredActivities : activities;
+    const openIncidents = useFilteredData 
+      ? finalFilteredActivities.filter(a => a.status === 'Open' || a.status === 'In Progress').length
+      : activities.filter(a => a.status === 'Open' || a.status === 'In Progress').length;
+
     return { 
-        totalActivities: finalFilteredActivities.length, 
-        openIncidents: activities.filter(a => a.status === 'Open' || a.status === 'In Progress').length,
-        activeStaff: new Set(finalFilteredActivities.map(a => a.user_id)).size, 
+        totalActivities: dataSource.length, 
+        openIncidents,
+        activeStaff: new Set(dataSource.map(a => a.user_id)).size, 
         peakHour 
     };
-  }, [finalFilteredActivities, activities]);
+  }, [finalFilteredActivities, activities, selectedCategory, selectedUserId, searchTerm, selectedHour]);
   
   const myTasksCount = useMemo(() => {
       if (selectedUserId === 'all') {
@@ -195,7 +224,7 @@ const Dashboard: React.FC<DashboardProps> = ({
     const index = finalFilteredActivities.findIndex(a => a.id === activityId);
     const feedElement = feedContainerRef.current;
     if (index !== -1 && feedElement) {
-        const ITEM_HEIGHT = 192; // Match the value in ActivityCard
+        const ITEM_HEIGHT = 260; // Match the value in ActivityFeed
         const scrollTop = index * ITEM_HEIGHT - (feedElement.clientHeight / 2) + (ITEM_HEIGHT / 2);
         feedElement.scrollTo({ top: scrollTop, behavior: 'smooth' });
     }
@@ -300,8 +329,9 @@ const Dashboard: React.FC<DashboardProps> = ({
           onEdit={onEditActivity}
           onDelete={onDeleteActivity}
           onTaskAction={onTaskAction}
-          onAddUpdate={onAddUpdate}
           onQuickStatusChange={onQuickStatusChange}
+          onQuickStatusNote={onQuickStatusNote}
+          onViewDetails={onViewDetails}
           view={viewTab}
         />
       </div>

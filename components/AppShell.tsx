@@ -12,8 +12,9 @@ import { useMockData } from '../hooks/useMockData';
 import { useToast } from '../hooks/useToast';
 import AddIncidentModal from './AddIncidentModal';
 import TaskActionModal from './TaskActionModal';
+import TaskDetailsModal from './TaskDetailsModal';
 import GeofencePrompt from './GeofencePrompt';
-import AddUpdateModal from './AddUpdateModal';
+import QuickStatusNoteModal from './QuickStatusNoteModal';
 import { fetchInitialData } from '../lib/api';
 import DashboardSkeleton from './DashboardSkeleton';
 import DynamicMapView from './dynamic/DynamicMapView';
@@ -79,8 +80,14 @@ export default function AppShell() {
   const [prefilledData, setPrefilledData] = useState<Partial<NewActivityData> | null>(null);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [activityForTask, setActivityForTask] = useState<Activity | null>(null);
-  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState(false);
-  const [activityForUpdate, setActivityForUpdate] = useState<Activity | null>(null);
+  const [isQuickNoteModalOpen, setIsQuickNoteModalOpen] = useState(false);
+  const [quickNoteData, setQuickNoteData] = useState<{
+    activity: Activity;
+    targetStatus: ActivityStatus;
+    notePrompt: string;
+  } | null>(null);
+  const [isTaskDetailsModalOpen, setIsTaskDetailsModalOpen] = useState(false);
+  const [activityForDetails, setActivityForDetails] = useState<Activity | null>(null);
 
   // --- Filter State ---
   const [selectedUserId, setSelectedUserId] = useState<string>(() => getInitialFilterState().selectedUserId);
@@ -147,13 +154,28 @@ export default function AppShell() {
   const handleCloseTaskModal = () => {
     setIsTaskModalOpen(false); setActivityForTask(null);
   };
-  const handleSaveTaskAction = async (activityId: string, payload: { userId?: string; status?: ActivityStatus; notes?: string; instructions?: string; }) => {
+  const handleSaveTaskAction = async (activityId: string, payload: { userId?: string; status?: ActivityStatus; notes?: string; instructions?: string; progressNotes?: string; }) => {
     try {
       const updatePayload: any = {};
       if(payload.userId) updatePayload.assignToUserId = payload.userId;
       if(payload.status) updatePayload.status = payload.status;
       if(payload.notes !== undefined) updatePayload.resolutionNotes = payload.notes;
       if(payload.instructions !== undefined) updatePayload.instructions = payload.instructions;
+      
+      // Handle progress notes by creating an ActivityUpdate record
+      if (payload.progressNotes?.trim()) {
+        const currentActivity = activities.find(a => a.id === activityId);
+        const currentUser = users[0] || { id: '1', name: 'User', role: 'Admin', phone_number: '' };
+        
+        // Create the update with status context
+        await addUpdateToActivity(activityId, {
+          notes: payload.progressNotes.trim(),
+          author_id: currentUser.id,
+          status_context: payload.status || currentActivity?.status,
+          update_type: payload.userId ? 'assignment' : 'status_change'
+        });
+      }
+      
       await updateActivityStatus(activityId, updatePayload);
       addToast('Success', 'Task successfully updated.', 'success');
       handleCloseTaskModal();
@@ -169,19 +191,83 @@ export default function AppShell() {
         addToast('Error', 'Could not update task status.', 'error'); console.error(error);
     }
   };
-  const handleOpenUpdateModal = (activity: Activity) => {
-      setActivityForUpdate(activity); setIsUpdateModalOpen(true);
+  const handleOpenQuickNoteModal = (activity: Activity, status: ActivityStatus, notePrompt: string) => {
+    setQuickNoteData({ activity, targetStatus: status, notePrompt });
+    setIsQuickNoteModalOpen(true);
   };
-  const handleCloseUpdateModal = () => {
-      setIsUpdateModalOpen(false); setActivityForUpdate(null);
+  const handleCloseQuickNoteModal = () => {
+    setIsQuickNoteModalOpen(false);
+    setQuickNoteData(null);
   };
-  const handleSaveUpdate = async (activityId: string, updateData: Omit<ActivityUpdate, 'id' | 'timestamp'>) => {
+  const handleSaveQuickStatusNote = async (activityId: string, notes: string, status: ActivityStatus, updateType: string) => {
     try {
-        await addUpdateToActivity(activityId, updateData);
-        addToast('Success', 'Incident update added.', 'success');
-        handleCloseUpdateModal();
+      // First, add the update with status context
+      await addUpdateToActivity(activityId, {
+        notes,
+        author_id: users[0]?.id || '1', // Use current user (simplified for now)
+        status_context: status,
+        update_type: updateType as any
+      });
+      
+      // Then update the activity status if it changed
+      const currentActivity = activities.find(a => a.id === activityId);
+      if (currentActivity && currentActivity.status !== status) {
+        await updateActivityStatus(activityId, { status });
+      }
+      
+      addToast('Success', 'Status note added successfully.', 'success');
+      handleCloseQuickNoteModal();
     } catch (error) {
-        addToast('Error', 'Could not add update.', 'error'); console.error(error);
+      addToast('Error', 'Could not save status note.', 'error');
+      console.error(error);
+    }
+  };
+
+  // Task Details Modal handlers
+  const handleOpenTaskDetailsModal = (activity: Activity) => {
+    setActivityForDetails(activity);
+    setIsTaskDetailsModalOpen(true);
+  };
+  const handleCloseTaskDetailsModal = () => {
+    setIsTaskDetailsModalOpen(false);
+    setActivityForDetails(null);
+  };
+  const handleTaskDetailsEdit = (activity: Activity) => {
+    // Close details modal and open edit modal
+    handleCloseTaskDetailsModal();
+    handleOpenLogModal(activity);
+  };
+  const handleTaskDetailsDelete = (activityId: string) => {
+    // Close details modal and delete
+    handleCloseTaskDetailsModal();
+    handleDeleteActivity(activityId);
+  };
+  const handleTaskDetailsStatusChange = async (activityId: string, newStatus: ActivityStatus) => {
+    await handleQuickStatusChange(activityId, newStatus);
+  };
+  const handleTaskDetailsAssign = async (activityId: string, userId: string, instructions?: string) => {
+    try {
+      await updateActivityStatus(activityId, { 
+        assignToUserId: userId,
+        instructions: instructions || undefined
+      });
+      addToast('Success', 'Task assigned successfully.', 'success');
+    } catch (error) {
+      addToast('Error', 'Could not assign task.', 'error');
+      console.error(error);
+    }
+  };
+  const handleTaskDetailsAddUpdate = async (activityId: string, notes: string, updateType?: 'progress' | 'status_change' | 'assignment' | 'completion') => {
+    try {
+      await addUpdateToActivity(activityId, {
+        notes,
+        author_id: users[0]?.id || '1',
+        update_type: updateType || 'progress'
+      });
+      addToast('Success', 'Update added successfully.', 'success');
+    } catch (error) {
+      addToast('Error', 'Could not add update.', 'error');
+      console.error(error);
     }
   };
 
@@ -197,8 +283,10 @@ export default function AppShell() {
               onLogIncidentClick={() => handleOpenLogModal()}
               onEditActivity={(activity) => handleOpenLogModal(activity)}
               onDeleteActivity={handleDeleteActivity} onSaveIncident={handleSaveIncident}
-              onTaskAction={handleOpenTaskModal} onAddUpdate={handleOpenUpdateModal}
+              onTaskAction={handleOpenTaskModal}
               onQuickStatusChange={handleQuickStatusChange}
+              onQuickStatusNote={handleOpenQuickNoteModal}
+              onViewDetails={handleOpenTaskDetailsModal}
               highlightActivityId={highlightActivityId || undefined}
             />;
         case 'ai-insights':
@@ -265,10 +353,29 @@ export default function AppShell() {
                 activity={activityForTask} users={users}
             />
         )}
-        {isUpdateModalOpen && activityForUpdate && (
-            <AddUpdateModal
-                isOpen={isUpdateModalOpen} onClose={handleCloseUpdateModal} onSave={handleSaveUpdate}
-                activity={activityForUpdate} users={users}
+        {isQuickNoteModalOpen && quickNoteData && (
+            <QuickStatusNoteModal
+                isOpen={isQuickNoteModalOpen} 
+                onClose={handleCloseQuickNoteModal} 
+                onSave={handleSaveQuickStatusNote}
+                activity={quickNoteData.activity} 
+                targetStatus={quickNoteData.targetStatus}
+                notePrompt={quickNoteData.notePrompt}
+                currentUser={users[0] || { id: '1', name: 'User', role: 'Admin', phone_number: '' }}
+            />
+        )}
+        {isTaskDetailsModalOpen && activityForDetails && (
+            <TaskDetailsModal
+                isOpen={isTaskDetailsModalOpen}
+                onClose={handleCloseTaskDetailsModal}
+                activity={activityForDetails}
+                users={users}
+                categories={categories}
+                onEdit={handleTaskDetailsEdit}
+                onDelete={handleTaskDetailsDelete}
+                onStatusChange={handleTaskDetailsStatusChange}
+                onAssign={handleTaskDetailsAssign}
+                onAddUpdate={handleTaskDetailsAddUpdate}
             />
         )}
       </div>

@@ -9,7 +9,7 @@ interface TaskActionModalProps {
   onClose: () => void;
   onSave: (
     activityId: string, 
-    payload: { userId?: string; status?: ActivityStatus; notes?: string; instructions?: string; }
+    payload: { userId?: string; status?: ActivityStatus; notes?: string; instructions?: string; progressNotes?: string; }
   ) => Promise<void>;
   activity: Activity;
   users: User[];
@@ -20,6 +20,7 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
   const [status, setStatus] = useState<ActivityStatus>(activity.status as ActivityStatus);
   const [resolutionNotes, setResolutionNotes] = useState(activity.resolution_notes || '');
   const [instructions, setInstructions] = useState(activity.assignment_instructions || '');
+  const [progressNotes, setProgressNotes] = useState('');
   const [currentView, setCurrentView] = useState<'main' | 'assign'>('main');
   const [isSaving, setIsSaving] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
@@ -32,6 +33,7 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
       setStatus(activity.status as ActivityStatus);
       setResolutionNotes(activity.resolution_notes || '');
       setInstructions(activity.assignment_instructions || '');
+      setProgressNotes('');
       setCurrentView('main');
     }
   }, [isOpen, activity]);
@@ -51,7 +53,10 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
 
   const handleSaveStatus = async () => {
     setIsSaving(true);
-    await onSave(activity.id, { status, notes: resolutionNotes });
+    const payload: any = { status };
+    if (resolutionNotes) payload.notes = resolutionNotes;
+    if (progressNotes.trim()) payload.progressNotes = progressNotes.trim();
+    await onSave(activity.id, payload);
     setIsSaving(false);
   };
   
@@ -87,10 +92,21 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
           <option value="Unassigned">Unassigned (remove assignment)</option>
         </select>
       </div>
+      <div>
+        <label htmlFor="progress_notes" className={labelStyles}>Progress Notes (Optional)</label>
+        <textarea 
+          id="progress_notes" 
+          value={progressNotes} 
+          onChange={(e) => setProgressNotes(e.target.value)} 
+          rows={3} 
+          className={inputStyles} 
+          placeholder="Add any updates, observations, or context about this status change..."
+        />
+      </div>
       {status === 'Resolved' && (
         <div>
-          <label htmlFor="resolution_notes" className={labelStyles}>Resolution Notes (Optional)</label>
-          <textarea id="resolution_notes" value={resolutionNotes} onChange={(e) => setResolutionNotes(e.target.value)} rows={3} className={inputStyles} />
+          <label htmlFor="resolution_notes" className={labelStyles}>Final Resolution Notes (Optional)</label>
+          <textarea id="resolution_notes" value={resolutionNotes} onChange={(e) => setResolutionNotes(e.target.value)} rows={3} className={inputStyles} placeholder="Describe how this issue was resolved..." />
         </div>
       )}
       <div className="flex justify-end gap-3 pt-4">
@@ -98,7 +114,7 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
         <button type="button" onClick={() => setCurrentView('assign')} className="px-4 py-2 text-sm rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors">
             {activity.assigned_to_user_id ? 'Reassign' : 'Assign'}
         </button>
-        <button type="button" onClick={handleSaveStatus} disabled={isSaving || status === activity.status} className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-wait flex items-center gap-2">
+        <button type="button" onClick={handleSaveStatus} disabled={isSaving || (status === activity.status && !progressNotes.trim())} className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-wait flex items-center gap-2">
             {isSaving && <Spinner size="sm" />}
             Save Status
         </button>
@@ -151,7 +167,7 @@ const TaskActionModal: React.FC<TaskActionModalProps> = ({ isOpen, onClose, onSa
         
         <div className="space-y-4">
             <div className="text-sm bg-secondary/50 p-3 rounded-md">
-                <p><span className="font-semibold text-muted-foreground">Incident:</span> {activity.subcategory}</p>
+                <p><span className="font-semibold text-muted-foreground">Incident:</span> {activity.notes && activity.notes !== 'No additional details provided' && activity.notes.trim() ? activity.notes : activity.subcategory}</p>
                 <p><span className="font-semibold text-muted-foreground">Location:</span> {activity.location}</p>
             </div>
             {currentView === 'main' ? renderMainView() : renderAssignView()}

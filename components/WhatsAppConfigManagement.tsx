@@ -162,7 +162,22 @@ const WhatsAppConfigManagement: React.FC<WhatsAppConfigManagementProps> = ({ dat
       } else {
         setTestStatus('error');
         const error = await response.json();
-        addToast('Error', `Connection test failed: ${error.message}`, 'error');
+        
+        // Enhanced error message parsing
+        const errorMessage = error.details || error.message || error.error || 'Unknown error';
+        const errorType = error.type ? ` (${error.type})` : '';
+        const errorCode = error.code ? ` [${error.code}]` : '';
+        
+        // Provide specific guidance for common errors
+        let userGuidance = '';
+        if (error.code === 190) {
+          userGuidance = ' → This usually means the WhatsApp app has been deleted or the access token is invalid. Please create a new app in Meta Developer Console.';
+        } else if (error.code === 401) {
+          userGuidance = ' → Please check your access token and ensure it has the correct permissions.';
+        }
+        
+        const fullMessage = `${errorMessage}${errorType}${errorCode}${userGuidance}`;
+        addToast('Error', `WhatsApp API test failed: ${fullMessage}`, 'error');
       }
     } catch (error) {
       setTestStatus('error');

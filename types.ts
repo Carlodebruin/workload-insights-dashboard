@@ -21,6 +21,10 @@ export interface ActivityUpdate {
   notes: string;
   photo_url?: string;
   author_id: string;
+  
+  // Enhanced fields for status context tracking
+  status_context?: string; // Optional status change that occurred with this update
+  update_type?: 'progress' | 'status_change' | 'assignment' | 'completion'; // Type of update
 }
 
 export interface Activity {

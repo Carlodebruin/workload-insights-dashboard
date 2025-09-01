@@ -1,14 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '../../../../lib/prisma';
 import { logSecureInfo, logSecureError, createRequestContext } from '../../../../lib/secure-logger';
-import { whatsappConfig } from '../../../../lib/whatsapp/config';
+import { sendTwilioMessage } from '../../../../lib/twilio';
 
 /**
- * Send WhatsApp status update notifications
- * Called when activity status changes to notify the original reporter
+ * Handles sending WhatsApp notifications for status updates and new assignments using Twilio.
  */
 export async function POST(request: NextRequest) {
-  const requestContext = createRequestContext('whatsapp_status_update', 'POST');
+  const requestContext = createRequestContext('status_update_notification', 'POST');
   
   try {
     const { activityId, newStatus, notes, assignedToUserId } = await request.json();
@@ -17,257 +16,72 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Activity ID is required' }, { status: 400 });
     }
 
-    // Get activity details with user information
     const activity = await prisma.activity.findUnique({
       where: { id: activityId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            phone_number: true,
-            whatsappUsers: {
-              select: {
-                phoneNumber: true,
-                displayName: true
-              }
-            }
-          }
-        },
-        category: {
-          select: { name: true }
-        },
-        assignedTo: {
-          select: { name: true }
-        }
-      }
+      include: { user: true, category: true, assignedTo: true },
     });
 
     if (!activity) {
       return NextResponse.json({ error: 'Activity not found' }, { status: 404 });
     }
 
-    // Find WhatsApp user associated with the activity reporter
-    const whatsappUser = activity.user.whatsappUsers.find(wu => 
-      wu.phoneNumber === activity.user.phone_number
-    );
+    const referenceNumber = `${activity.category.name.substring(0,3).toUpperCase()}-${activity.id.slice(-4)}`;
 
-    if (!whatsappUser) {
-      // No WhatsApp user found, skip notification
-      logSecureInfo('No WhatsApp user found for activity status update', requestContext, {
-        activityId,
-        userId: activity.user.id,
-        phoneNumber: activity.user.phone_number
-      });
-      return NextResponse.json({ 
-        success: true, 
-        message: 'No WhatsApp user associated with this activity' 
-      });
-    }
+    // 1. Notify Reporter of Status Change
+    if (newStatus && activity.user.phone_number) {
+      const assignedToName = assignedToUserId 
+        ? (await prisma.user.findUnique({ where: { id: assignedToUserId } }))?.name 
+        : activity.assignedTo?.name;
 
-    // Generate reference number
-    const referenceNumber = `${activity.category.name.substring(0,4).toUpperCase()}-${activity.id.slice(-4)}`;
-
-    // Create status update message
-    const statusEmoji = getStatusEmoji(newStatus);
-    const statusMessage = createStatusUpdateMessage({
-      referenceNumber,
-      newStatus,
-      statusEmoji,
-      category: activity.category.name,
-      subcategory: activity.subcategory,
-      location: activity.location,
-      assignedToName: activity.assignedTo?.name,
-      notes,
-      reporterName: activity.user.name
-    });
-
-    // Send WhatsApp message
-    const result = await sendWhatsAppStatusMessage(
-      whatsappUser.phoneNumber, 
-      statusMessage, 
-      requestContext
-    );
-
-    if (result.success) {
-      // Store the status notification in the database
-      await prisma.whatsAppMessage.create({
-        data: {
-          waId: result.messageId || `status_${Date.now()}`,
-          from: process.env.WHATSAPP_PHONE_NUMBER_ID || 'system',
-          to: whatsappUser.phoneNumber,
-          type: 'text',
-          content: JSON.stringify({ text: statusMessage }),
-          timestamp: new Date(),
-          direction: 'outbound',
-          status: 'sent',
-          isFreeMessage: false,
-          processed: true,
-          relatedActivityId: activityId
-        }
-      });
-
-      logSecureInfo('WhatsApp status update sent successfully', requestContext, {
-        activityId,
-        phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber),
+      const message = createStatusUpdateMessage({
         newStatus,
         referenceNumber,
-        messageId: result.messageId
+        subcategory: activity.subcategory,
+        assignedToName,
+        notes,
       });
-
-      return NextResponse.json({ 
-        success: true, 
-        messageId: result.messageId,
-        phoneNumber: maskPhoneNumber(whatsappUser.phoneNumber)
-      });
-
-    } else {
-      logSecureError('Failed to send WhatsApp status update', requestContext, 
-        new Error(result.error || 'Unknown error'));
-      
-      return NextResponse.json({ 
-        error: 'Failed to send status update',
-        details: result.error 
-      }, { status: 500 });
+      await sendTwilioMessage(activity.user.phone_number, message);
+      logSecureInfo('Reporter status update sent', requestContext, { activityId, newStatus });
     }
 
+    // 2. Notify Newly Assigned Staff
+    if (assignedToUserId) {
+      const assignedUser = await prisma.user.findUnique({ where: { id: assignedToUserId } });
+      if (assignedUser?.phone_number) {
+        const message = createAssignmentMessage({
+          referenceNumber,
+          subcategory: activity.subcategory,
+          location: activity.location,
+          reporterName: activity.user.name,
+        });
+        await sendTwilioMessage(assignedUser.phone_number, message);
+        logSecureInfo('Staff assignment notification sent', requestContext, { activityId, assignedToUserId });
+      }
+    }
+
+    return NextResponse.json({ success: true, message: 'Notifications sent' });
+
   } catch (error) {
-    logSecureError('WhatsApp status update API error', requestContext, 
-      error instanceof Error ? error : undefined);
-
-    return NextResponse.json(
-      { error: 'Internal Server Error' },
-      { status: 500 }
-    );
+    logSecureError('Status update notification error', requestContext, error instanceof Error ? error : undefined);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
 
-/**
- * Get emoji for activity status
- */
-function getStatusEmoji(status: string): string {
-  const statusEmojis: Record<string, string> = {
-    'Unassigned': '📋',
-    'Open': '🟢',
-    'Assigned': '👤',
-    'In Progress': '🔄',
-    'On Hold': '⏸️',
-    'Resolved': '✅',
-    'Completed': '✅',
-    'Cancelled': '❌'
-  };
-  
-  return statusEmojis[status] || '📊';
-}
+// Message Generation Functions
 
-/**
- * Create formatted status update message
- */
-function createStatusUpdateMessage({
-  referenceNumber,
-  newStatus,
-  statusEmoji,
-  category,
-  subcategory,
-  location,
-  assignedToName,
-  notes,
-  reporterName
-}: {
-  referenceNumber: string;
-  newStatus: string;
-  statusEmoji: string;
-  category: string;
-  subcategory: string;
-  location: string;
-  assignedToName?: string;
-  notes?: string;
-  reporterName: string;
-}): string {
-  let message = `${statusEmoji} *Status Update: ${referenceNumber}*
-
-📋 **Task:** ${category} - ${subcategory}
-📍 **Location:** ${location}
-📊 **New Status:** ${newStatus}`;
-
-  if (assignedToName) {
-    message += `\n👤 **Assigned to:** ${assignedToName}`;
-  }
-
-  if (notes) {
-    message += `\n\n📝 **Update Notes:**\n${notes}`;
-  }
-
-  // Add contextual next steps based on status
-  if (newStatus === 'In Progress') {
-    message += `\n\n💪 **Good News!** Work has started on your report.`;
-  } else if (newStatus === 'Resolved' || newStatus === 'Completed') {
-    message += `\n\n🎉 **Great News!** Your reported issue has been resolved!`;
-  } else if (newStatus === 'On Hold') {
-    message += `\n\n⏳ **Note:** Work is temporarily paused. You'll be notified when it resumes.`;
-  } else if (newStatus === 'Assigned') {
-    message += `\n\n👍 **Update:** A team member has been assigned to handle this.`;
-  }
-
-  message += `\n\nReply /status ${referenceNumber} for full details.`;
-  
+function createStatusUpdateMessage(data: any): string {
+  let message = `*Status Update: Ref ${data.referenceNumber}*\n`;
+  message += `Task: ${data.subcategory}\n`;
+  message += `New Status: *${data.newStatus}*`;
+  if (data.assignedToName) message += `\nAssigned to: ${data.assignedToName}`;
+  if (data.notes) message += `\nNotes: ${data.notes}`;
   return message;
 }
 
-/**
- * Send WhatsApp message (simplified version for status updates)
- */
-async function sendWhatsAppStatusMessage(
-  phoneNumber: string,
-  message: string,
-  requestContext: any
-): Promise<{ success: boolean; messageId?: string; error?: string }> {
-  try {
-    // Initialize WhatsApp config
-    whatsappConfig.initialize();
-    const config = whatsappConfig.getConfig();
-
-    const apiUrl = `https://graph.facebook.com/${config.apiVersion}/${config.phoneNumberId}/messages`;
-    
-    const requestBody = {
-      messaging_product: 'whatsapp',
-      to: phoneNumber,
-      type: 'text',
-      text: {
-        body: message
-      }
-    };
-
-    const response = await fetch(apiUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${config.accessToken}`,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify(requestBody),
-      signal: AbortSignal.timeout(30000)
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`WhatsApp API error: ${response.status} - ${errorText}`);
-    }
-
-    const result = await response.json();
-    const messageId = result.messages[0]?.id || 'unknown';
-
-    return { success: true, messageId };
-
-  } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    return { success: false, error: errorMessage };
-  }
-}
-
-/**
- * Mask phone number for logging
- */
-function maskPhoneNumber(phoneNumber: string): string {
-  if (phoneNumber.length < 4) return '****';
-  return phoneNumber.slice(0, -4).replace(/./g, '*') + phoneNumber.slice(-4);
+function createAssignmentMessage(data: any): string {
+  let message = `*New Assignment: Ref ${data.referenceNumber}*\n`;
+  message += `Task: ${data.subcategory}\n`;
+  message += `Location: ${data.location}\n`;
+  message += `Reported by: ${data.reporterName}`;
+  return message;
 }

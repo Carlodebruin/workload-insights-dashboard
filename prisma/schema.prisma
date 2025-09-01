@@ -53,6 +53,12 @@ model Activity {
   assigned_to_user_id String?
   assignment_instructions String?
   resolution_notes String?
+  
+  // Deadline management fields
+  deadline_date     DateTime? // Optional deadline for task completion
+  deadline_type     String @default("daily") // "daily", "custom", "none"
+  is_overdue        Boolean @default(false) // Computed field for overdue status
+  overdue_notified  Boolean @default(false) // Track if overdue notification sent
 
   user         User @relation(fields: [user_id], references: [id])
   category     Category @relation(fields: [category_id], references: [id])
@@ -75,6 +81,11 @@ model Activity {
   @@index([timestamp, status], name: "idx_activity_time_status")
   // Geographic indexing for location-based queries
   @@index([latitude, longitude], name: "idx_activity_coordinates")
+  // Deadline-focused indexes for performance
+  @@index([deadline_date], name: "idx_activity_deadline")
+  @@index([is_overdue], name: "idx_activity_overdue")
+  @@index([deadline_date, status], name: "idx_activity_deadline_status")
+  @@index([deadline_type], name: "idx_activity_deadline_type")
   @@map("activities")
 }
 
@@ -85,6 +96,10 @@ model ActivityUpdate {
   notes       String
   photo_url   String?
   author_id   String
+  
+  // Enhanced fields for status context tracking
+  status_context String? // Optional status change that occurred with this update
+  update_type    String @default("progress") // Type of update: 'progress', 'status_change', 'assignment', 'completion'
 
   activity Activity @relation(fields: [activity_id], references: [id], onDelete: Cascade)
   author   User @relation(fields: [author_id], references: [id])
@@ -93,9 +108,13 @@ model ActivityUpdate {
   @@index([activity_id], name: "idx_update_activity")
   @@index([author_id], name: "idx_update_author")
   @@index([timestamp], name: "idx_update_timestamp")
+  @@index([update_type], name: "idx_update_type")
+  @@index([status_context], name: "idx_update_status_context")
   // Composite indexes for common query patterns
   @@index([activity_id, timestamp], name: "idx_update_activity_time")
   @@index([author_id, timestamp], name: "idx_update_author_time")
+  @@index([activity_id, update_type], name: "idx_update_activity_type")
+  @@index([status_context, timestamp], name: "idx_update_status_time")
   @@map("activity_updates")
 }
 

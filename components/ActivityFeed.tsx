@@ -11,13 +11,14 @@ interface ActivityFeedProps {
   onEdit: (activity: Activity) => void;
   onDelete: (activityId: string) => void;
   onTaskAction: (activity: Activity) => void;
-  onAddUpdate: (activity: Activity) => void;
   onQuickStatusChange: (activityId: string, newStatus: ActivityStatus) => void;
+  onQuickStatusNote?: (activity: Activity, status: ActivityStatus, notePrompt: string) => void; // New: Quick status with note
+  onViewDetails: (activity: Activity) => void; // New: View task details modal
   containerRef: React.RefObject<HTMLDivElement>;
   view: 'all' | 'mytasks';
 }
 
-const ITEM_HEIGHT = 240; // Increased height to accommodate action buttons
+const ITEM_HEIGHT = 260; // Increased height to accommodate quick action buttons
 
 const ActivityFeed: React.FC<ActivityFeedProps> = ({
   activities,
@@ -27,8 +28,9 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
   onEdit,
   onDelete,
   onTaskAction,
-  onAddUpdate,
   onQuickStatusChange,
+  onQuickStatusNote,
+  onViewDetails,
   containerRef,
   view
 }) => {
@@ -83,8 +85,9 @@ const ActivityFeed: React.FC<ActivityFeedProps> = ({
                     onEdit={onEdit}
                     onDelete={onDelete}
                     onTaskAction={onTaskAction}
-                    onAddUpdate={onAddUpdate}
                     onQuickStatusChange={onQuickStatusChange}
+                    onQuickStatusNote={onQuickStatusNote}
+                    onViewDetails={onViewDetails}
                 />
             </div>
           ))}

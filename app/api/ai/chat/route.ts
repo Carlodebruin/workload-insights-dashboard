@@ -8,15 +8,105 @@ import { prisma } from '../../../../lib/prisma';
 import { decrypt } from '../../../../lib/encryption';
 
 const serializeActivitiesForAI = (activities: Activity[], users: User[], allCategories: Category[]): string => {
-    if (activities.length === 0) return "[]";
-    const serialized = activities.map(act => ({
-        id: act.id, staff: users.find(u => u.id === act.user_id)?.name || 'Unknown',
-        category: allCategories.find(c => c.id === act.category_id)?.name || act.category_id,
-        details: act.subcategory, location: act.location,
-        ...(act.notes && { notes: act.notes }),
-        has_photo: !!act.photo_url
-    }));
-    return JSON.stringify(serialized, null, 2);
+    // Enhanced serialization to ensure AI always sees ALL staff members and complete context
+    const currentDate = new Date();
+    const last7Days = new Date(currentDate);
+    last7Days.setDate(currentDate.getDate() - 7);
+    const last30Days = new Date(currentDate);
+    last30Days.setDate(currentDate.getDate() - 30);
+
+    // Create comprehensive staff overview
+    const allStaffMembers = users.map(user => {
+        const userActivities = activities.filter(a => a.user_id === user.id);
+        const recentActivities = userActivities.filter(a => new Date(a.timestamp) >= last7Days);
+        const monthlyActivities = userActivities.filter(a => new Date(a.timestamp) >= last30Days);
+        
+        // Get the most recent activity for current status
+        const mostRecentActivity = userActivities
+            .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
+
+        return {
+            id: user.id,
+            name: user.name,
+            role: user.role,
+            phone: user.phone_number,
+            activity_summary: {
+                total_activities: userActivities.length,
+                last_7_days: recentActivities.length,
+                last_30_days: monthlyActivities.length,
+                most_recent_activity: mostRecentActivity ? {
+                    date: mostRecentActivity.timestamp,
+                    category: allCategories.find(c => c.id === mostRecentActivity.category_id)?.name || mostRecentActivity.category_id,
+                    details: mostRecentActivity.subcategory,
+                    location: mostRecentActivity.location,
+                    status: mostRecentActivity.status
+                } : null,
+                current_status: mostRecentActivity ?
+                    (mostRecentActivity.status === 'In Progress' ? 'Currently working on task' :
+                     mostRecentActivity.status === 'Open' ? 'Has pending tasks' :
+                     mostRecentActivity.status === 'Resolved' ? 'Recently completed tasks' :
+                     'Available') : 'No recent activities'
+            }
+        };
+    });
+
+    // Enhanced activity data with complete context
+    const enrichedActivities = activities.map(act => {
+        const staff = users.find(u => u.id === act.user_id);
+        const category = allCategories.find(c => c.id === act.category_id);
+        const assignedStaff = act.assigned_to_user_id ? users.find(u => u.id === act.assigned_to_user_id) : null;
+        
+        return {
+            id: act.id,
+            timestamp: act.timestamp,
+            staff: staff?.name || 'Unknown',
+            staff_role: staff?.role || 'Unknown',
+            category: category?.name || act.category_id,
+            subcategory: act.subcategory,
+            location: act.location,
+            status: act.status,
+            assigned_to: assignedStaff?.name || null,
+            assignment_instructions: act.assignment_instructions || null,
+            resolution_notes: act.resolution_notes || null,
+            has_photo: !!act.photo_url,
+            has_updates: act.updates && act.updates.length > 0,
+            ...(act.notes && { notes: act.notes }),
+            ...(act.latitude && act.longitude && { coordinates: `${act.latitude}, ${act.longitude}` })
+        };
+    });
+
+    // Create comprehensive data structure for AI
+    const aiContext = {
+        dataset_summary: {
+            total_staff: users.length,
+            total_activities: activities.length,
+            date_range: activities.length > 0 ? {
+                earliest: activities.reduce((earliest, act) =>
+                    new Date(act.timestamp) < new Date(earliest.timestamp) ? act : earliest
+                ).timestamp,
+                latest: activities.reduce((latest, act) =>
+                    new Date(act.timestamp) > new Date(latest.timestamp) ? act : latest
+                ).timestamp
+            } : null,
+            active_categories: Array.from(new Set(activities.map(a => allCategories.find(c => c.id === a.category_id)?.name || a.category_id))),
+            status_distribution: {
+                unassigned: activities.filter(a => a.status === 'Unassigned').length,
+                open: activities.filter(a => a.status === 'Open').length,
+                in_progress: activities.filter(a => a.status === 'In Progress').length,
+                resolved: activities.filter(a => a.status === 'Resolved').length
+            }
+        },
+        all_staff_members: allStaffMembers,
+        activities: enrichedActivities,
+        categories: allCategories.map(cat => ({
+            id: cat.id,
+            name: cat.name,
+            is_system: cat.isSystem,
+            activity_count: activities.filter(a => a.category_id === cat.id).length
+        }))
+    };
+
+    return JSON.stringify(aiContext, null, 2);
 };
 
 export async function GET(request: Request) {
@@ -98,6 +188,23 @@ export async function POST(request: Request) {
                 }
                 
                 const textData = serializeActivitiesForAI(activities, users, allCategories);
+                
+                // Debug logging to verify complete data is being sent to AI
+                console.log('[AI Chat] INITIAL_SUMMARY context:', {
+                    totalUsers: users.length,
+                    totalActivities: activities.length,
+                    totalCategories: allCategories.length,
+                    userNames: users.map((u: User) => u.name),
+                    activityDateRange: activities.length > 0 ? {
+                        earliest: activities.reduce((earliest: Activity, act: Activity) =>
+                            new Date(act.timestamp) < new Date(earliest.timestamp) ? act : earliest
+                        ).timestamp,
+                        latest: activities.reduce((latest: Activity, act: Activity) =>
+                            new Date(act.timestamp) > new Date(latest.timestamp) ? act : latest
+                        ).timestamp
+                    } : null
+                });
+                
                 let prompt = INITIAL_ANALYSIS_PROMPT;
                 if (textData !== "[]") prompt += `\n\nData:\n${textData}`;
                 
@@ -174,6 +281,15 @@ export async function POST(request: Request) {
             let contextualizedMessage = message;
             if (context && context.activities && context.users && context.allCategories) {
                 const textData = serializeActivitiesForAI(context.activities, context.users, context.allCategories);
+                
+                // Debug logging for chat context
+                console.log('[AI Chat] Chat context:', {
+                    totalUsers: context.users.length,
+                    totalActivities: context.activities.length,
+                    userNames: context.users.map((u: User) => u.name),
+                    userMessage: message.substring(0, 100) + (message.length > 100 ? '...' : '')
+                });
+                
                 if (textData !== "[]") {
                     contextualizedMessage = `${message}\n\n[Current Dataset Context]:\n${textData}`;
                 }

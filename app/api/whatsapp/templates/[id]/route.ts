@@ -78,6 +78,9 @@ export const DELETE = withAuth(async (request: NextRequest, user: any, { params 
     }
 
     // Delete template
+    if (!template.id) {
+      return NextResponse.json({ error: 'Template ID is required' }, { status: 400 });
+    }
     const result = await whatsappTemplateManager.deleteTemplate(template.id);
 
     if (result.success) {

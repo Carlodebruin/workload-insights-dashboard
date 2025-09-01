@@ -118,15 +118,24 @@ export const optimizedQueries = {
     });
   },
 
-  // Optimized WhatsApp messages with pagination
+  // Heavily optimized WhatsApp messages with pagination and caching
   getWhatsAppMessagesOptimized: async (prisma: PrismaClient, page: number = 1, limit: number = 20) => {
     const offset = (page - 1) * limit;
     
-    const [messages, totalCount] = await Promise.all([
-      prisma.whatsAppMessage.findMany({
+    // Use smaller limit for better performance, max 50 per page
+    const actualLimit = Math.min(limit, 50);
+    
+    try {
+      // Parallel execution with timeout protection
+      const queryTimeout = 8000; // 8 seconds max
+      
+      const messagesPromise = prisma.whatsAppMessage.findMany({
         skip: offset,
-        take: limit,
-        orderBy: { timestamp: 'desc' },
+        take: actualLimit,
+        orderBy: [
+          { timestamp: 'desc' },
+          { id: 'desc' } // Secondary sort for consistency
+        ],
         select: {
           id: true,
           waId: true,
@@ -138,11 +147,11 @@ export const optimizedQueries = {
           status: true,
           processed: true,
           relatedActivityId: true,
+          // Simplified nested selects to reduce join complexity
           whatsappUser: {
             select: {
               displayName: true,
               phoneNumber: true,
-              linkedUserId: true,
               linkedUser: {
                 select: {
                   name: true,
@@ -151,31 +160,63 @@ export const optimizedQueries = {
               }
             }
           },
+          // Simplified related activity select
           relatedActivity: {
             select: {
               id: true,
-              category_id: true,
               location: true,
-              status: true
+              status: true,
+              subcategory: true
             }
           }
         }
-      }),
-      prisma.whatsAppMessage.count()
-    ]);
-    
-    return {
-      messages,
-      totalCount,
-      pagination: {
-        currentPage: page,
-        totalPages: Math.ceil(totalCount / limit),
-        totalRecords: totalCount,
-        pageSize: limit,
-        hasNextPage: page < Math.ceil(totalCount / limit),
-        hasPreviousPage: page > 1
-      }
-    };
+      });
+      
+      // Cached count query - only run full count every 30 seconds
+      const countCacheKey = 'whatsapp_message_count';
+      const countPromise = cacheHelpers.getCachedCount(prisma, countCacheKey, 30000, () => 
+        prisma.whatsAppMessage.count()
+      );
+      
+      // Race against timeout
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('WhatsApp query timeout')), queryTimeout);
+      });
+      
+      const [messages, totalCount] = await Promise.race([
+        Promise.all([messagesPromise, countPromise]),
+        timeoutPromise
+      ]) as [any[], number];
+      
+      return {
+        messages,
+        totalCount,
+        pagination: {
+          currentPage: page,
+          totalPages: Math.ceil(totalCount / actualLimit),
+          totalRecords: totalCount,
+          pageSize: actualLimit,
+          hasNextPage: page < Math.ceil(totalCount / actualLimit),
+          hasPreviousPage: page > 1
+        }
+      };
+      
+    } catch (error) {
+      console.error('❌ WhatsApp messages query failed:', error);
+      // Fallback: return minimal data to prevent complete failure
+      return {
+        messages: [],
+        totalCount: 0,
+        pagination: {
+          currentPage: page,
+          totalPages: 0,
+          totalRecords: 0,
+          pageSize: actualLimit,
+          hasNextPage: false,
+          hasPreviousPage: false
+        }
+      };
+    }
   },
 
   // Optimized user queries
@@ -283,6 +324,9 @@ export const cacheHelpers = {
   categoriesCache: new Map<string, any>(),
   categoriesCacheTime: 0,
   
+  // Generic count cache for expensive count queries
+  countCache: new Map<string, { value: number; timestamp: number }>(),
+  
   getCachedCategories: async (prisma: PrismaClient) => {
     const now = Date.now();
     const cacheValidMs = 5 * 60 * 1000; // 5 minutes
@@ -305,5 +349,32 @@ export const cacheHelpers = {
     cacheHelpers.categoriesCacheTime = now;
     
     return categories;
+  },
+  
+  // Generic cached count function
+  getCachedCount: async (prisma: PrismaClient, cacheKey: string, cacheValidMs: number, countFn: () => Promise<number>): Promise<number> => {
+    const now = Date.now();
+    const cached = cacheHelpers.countCache.get(cacheKey);
+    
+    if (cached && (now - cached.timestamp) < cacheValidMs) {
+      return cached.value;
+    }
+    
+    try {
+      const count = await countFn();
+      cacheHelpers.countCache.set(cacheKey, { value: count, timestamp: now });
+      return count;
+    } catch (error) {
+      console.error(`❌ Count query failed for ${cacheKey}:`, error);
+      // Return cached value if available, otherwise 0
+      return cached?.value || 0;
+    }
+  },
+  
+  // Clear all caches (useful for testing)
+  clearAll: () => {
+    cacheHelpers.categoriesCache.clear();
+    cacheHelpers.countCache.clear();
+    cacheHelpers.categoriesCacheTime = 0;
   }
 };

@@ -76,11 +76,6 @@ export async function DELETE(
       return NextResponse.json({ error: 'Invalid user ID format' }, { status: 400 });
     }
     const { userId } = params;
-
-    // System user check
-    if (userId === '1') {
-      return NextResponse.json({ error: "Cannot delete the default administrative user." }, { status: 403 });
-    }
     
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -91,10 +86,21 @@ export async function DELETE(
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Find a fallback user (Admin with ID '1')
-    const adminUser = await prisma.user.findUnique({ where: { id: '1' } });
+    // Prevent deletion of the last admin user
+    const adminCount = await prisma.user.count({ where: { role: 'Admin' } });
+    if (existingUser.role === 'Admin' && adminCount <= 1) {
+      return NextResponse.json({ error: "Cannot delete the last administrative user." }, { status: 403 });
+    }
+
+    // Find a fallback admin user (use any available admin, not hardcoded ID)
+    const adminUser = await prisma.user.findFirst({ 
+      where: { 
+        role: 'Admin',
+        id: { not: userId } // Don't select the user being deleted
+      } 
+    });
     if (!adminUser) {
-      return NextResponse.json({ error: "Default admin user not found. Cannot reassign activities." }, { status: 500 });
+      return NextResponse.json({ error: "No admin user available to reassign activities. Cannot delete user." }, { status: 500 });
     }
 
     // Use transaction for data consistency

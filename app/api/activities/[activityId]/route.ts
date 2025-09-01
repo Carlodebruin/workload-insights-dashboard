@@ -21,6 +21,9 @@ type SerializedActivityUpdate = {
   notes: string;
   photo_url: string | null;
   author_id: string;
+  // Enhanced fields for status context tracking
+  status_context?: string | null;
+  update_type?: string | null;
 };
 
 // Type for Prisma update data
@@ -142,7 +145,7 @@ async function sendStatusUpdateMessage(
     statusMessage += `⏰ **Updated:** ${new Date().toLocaleString()}\n\n`;
 
     // Add AI-generated context based on status change
-    const ai = getWorkingAIProvider();
+    const ai = await getWorkingAIProvider();
     const contextPrompt = `Generate a brief, professional message explaining what "${newStatus}" status means for a school maintenance issue. Keep it under 50 words and reassuring.`;
     
     try {
@@ -266,6 +269,9 @@ export async function GET(
             notes: true,
             photo_url: true,
             author_id: true,
+            // Enhanced fields for status context tracking
+            status_context: true,
+            update_type: true,
           },
           orderBy: {
             timestamp: 'asc',

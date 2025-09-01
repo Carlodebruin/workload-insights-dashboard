@@ -3,9 +3,11 @@ import { prisma } from '../../../../../lib/prisma';
 import { ActivityUpdate } from '../../../../../types';
 import type { ActivityUpdate as PrismaActivityUpdate } from '@prisma/client';
 
-// Type for serialized update with string timestamp
+// Type for serialized update with string timestamp and enhanced fields
 type SerializedActivityUpdate = Omit<PrismaActivityUpdate, 'timestamp'> & {
   timestamp: string;
+  status_context?: string | null;
+  update_type?: string;
 };
 
 export async function POST(
@@ -16,12 +18,16 @@ export async function POST(
     const { activityId } = params;
     const body: Omit<ActivityUpdate, 'id' | 'timestamp'> = await request.json();
 
+    // Create the update with enhanced fields
     await prisma.activityUpdate.create({
       data: {
         notes: body.notes,
         photo_url: body.photo_url,
         author_id: body.author_id,
         activity_id: activityId,
+        // Enhanced fields (optional, will use defaults if not provided)
+        status_context: body.status_context || null,
+        update_type: body.update_type || 'progress',
       },
     });
 
