@@ -8,10 +8,10 @@ import { prisma } from '../../../../lib/prisma';
 import { decrypt } from '../../../../lib/encryption';
 
 const serializeActivitiesForAI = (activities: Activity[], users: User[], allCategories: Category[]): string => {
-    // Ultra-optimized serialization for production performance
+    // Ultra-aggressive optimization for Vercel serverless limits
     const isProduction = process.env.NODE_ENV === 'production';
-    const maxActivities = isProduction ? 25 : 50;
-    const dayRange = isProduction ? 14 : 30;
+    const maxActivities = isProduction ? 10 : 50; // Even more aggressive for Vercel
+    const dayRange = isProduction ? 7 : 30; // Just last week for production
     
     const currentDate = new Date();
     const cutoffDate = new Date(currentDate);
@@ -108,9 +108,9 @@ async function getAvailableProviders() {
 }
 
 export async function POST(request: Request) {
-    // Set up timeout for Vercel deployment compatibility
+    // Ultra-aggressive timeout for Vercel serverless limits
     const isProduction = process.env.NODE_ENV === 'production';
-    const TIMEOUT_MS = isProduction ? 25000 : 45000; // 25s for prod, 45s for dev
+    const TIMEOUT_MS = isProduction ? 10000 : 45000; // 10s for Vercel, 45s for dev
     
     const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error('AI request timeout')), TIMEOUT_MS);
@@ -136,7 +136,7 @@ export async function POST(request: Request) {
                     },
                 }),
                 new Promise<null>((_, reject) =>
-                    setTimeout(() => reject(new Error('Database query timeout')), 5000)
+                    setTimeout(() => reject(new Error('Database query timeout')), isProduction ? 2000 : 5000)
                 )
             ]);
 
@@ -188,11 +188,11 @@ export async function POST(request: Request) {
                     
                     const parsedData = await Promise.race([
                         ai.generateStructuredContent(prompt, schema, {
-                            maxTokens: isProduction ? 200 : 300, // Even more aggressive for prod
-                            temperature: 0.7
+                            maxTokens: isProduction ? 100 : 300, // Ultra-aggressive for Vercel
+                            temperature: 0.3 // Lower temperature for faster, more focused responses
                         }),
                         new Promise<never>((_, reject) =>
-                            setTimeout(() => reject(new Error('AI generation timeout')), isProduction ? 15000 : 25000)
+                            setTimeout(() => reject(new Error('AI generation timeout')), isProduction ? 7000 : 25000) // 7s for Vercel
                         )
                     ]) as { analysis: string; suggestions: string[] };
                     
@@ -276,11 +276,11 @@ export async function POST(request: Request) {
                     const streamResponse = await Promise.race([
                         ai.generateContentStream(messages, {
                             systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-                            maxTokens: isProduction ? 250 : 400, // More aggressive for prod
-                            temperature: 0.7
+                            maxTokens: isProduction ? 150 : 400, // Ultra-aggressive for Vercel
+                            temperature: 0.3 // Lower temp for speed
                         }),
                         new Promise<never>((_, reject) =>
-                            setTimeout(() => reject(new Error('AI streaming timeout')), isProduction ? 20000 : 30000)
+                            setTimeout(() => reject(new Error('AI streaming timeout')), isProduction ? 6000 : 30000) // 6s for Vercel
                         )
                     ]);
                     
@@ -362,11 +362,11 @@ export async function POST(request: Request) {
                     const response = await Promise.race([
                         ai.generateContent(contextualizedMessage, {
                             systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-                            maxTokens: isProduction ? 200 : 300, // More aggressive for prod
-                            temperature: 0.7
+                            maxTokens: isProduction ? 100 : 300, // Ultra-aggressive for Vercel
+                            temperature: 0.3 // Lower temp for speed
                         }),
                         new Promise<never>((_, reject) =>
-                            setTimeout(() => reject(new Error('AI generation timeout')), isProduction ? 15000 : 25000)
+                            setTimeout(() => reject(new Error('AI generation timeout')), isProduction ? 7000 : 25000) // 7s for Vercel
                         )
                     ]);
                     
@@ -440,13 +440,20 @@ export async function POST(request: Request) {
     } catch (error) {
         console.error("AI Chat Error (with timeout handling):", error);
         
-        // Handle timeout specifically for better user experience
+        // Handle timeout specifically with better fallback for user experience
         if (error instanceof Error && error.message.includes('timeout')) {
             return NextResponse.json({
-                error: "AI response timed out. The service may be experiencing high load. Please try again.",
+                error: "AI service timed out due to high demand. Here's a basic summary instead:",
+                analysis: "Your workload tracking system is active. Review the dashboard for current activity distribution and team assignments. Consider filtering by specific team members or categories to focus your analysis.",
+                suggestions: [
+                    "Use the filters to narrow down your view",
+                    "Check recent activities for current status",
+                    "Review team workload distribution",
+                    "Try the AI assistant again in a moment"
+                ],
                 fallback: true,
                 timeout: true
-            }, { status: 504 });
+            }, { status: 200 }); // Return 200 instead of 504 to provide useful fallback
         }
         
         let errorMessage = "Failed to communicate with AI.";
