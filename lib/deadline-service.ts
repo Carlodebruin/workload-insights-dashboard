@@ -74,7 +74,7 @@ export class DeadlineService {
 
       return {
         success: true,
-        deadline: updatedActivity.deadline_date
+        deadline: updatedActivity.deadline_date || undefined
       };
     } catch (error) {
       logSecureError('Failed to set deadline', requestContext, 
