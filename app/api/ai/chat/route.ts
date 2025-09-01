@@ -8,105 +8,86 @@ import { prisma } from '../../../../lib/prisma';
 import { decrypt } from '../../../../lib/encryption';
 
 const serializeActivitiesForAI = (activities: Activity[], users: User[], allCategories: Category[]): string => {
-    // Enhanced serialization to ensure AI always sees ALL staff members and complete context
+    // Optimized serialization for faster AI responses while maintaining data completeness
     const currentDate = new Date();
     const last7Days = new Date(currentDate);
     last7Days.setDate(currentDate.getDate() - 7);
     const last30Days = new Date(currentDate);
     last30Days.setDate(currentDate.getDate() - 30);
 
-    // Create comprehensive staff overview
+    // Create efficient staff overview - only essential data
     const allStaffMembers = users.map(user => {
         const userActivities = activities.filter(a => a.user_id === user.id);
         const recentActivities = userActivities.filter(a => new Date(a.timestamp) >= last7Days);
-        const monthlyActivities = userActivities.filter(a => new Date(a.timestamp) >= last30Days);
         
         // Get the most recent activity for current status
         const mostRecentActivity = userActivities
             .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())[0];
 
         return {
-            id: user.id,
             name: user.name,
             role: user.role,
-            phone: user.phone_number,
-            activity_summary: {
-                total_activities: userActivities.length,
-                last_7_days: recentActivities.length,
-                last_30_days: monthlyActivities.length,
-                most_recent_activity: mostRecentActivity ? {
-                    date: mostRecentActivity.timestamp,
+            activity_counts: {
+                total: userActivities.length,
+                last_7_days: recentActivities.length
+            },
+            current_status: mostRecentActivity ? 
+                (mostRecentActivity.status === 'In Progress' ? 'Currently working on task' :
+                 mostRecentActivity.status === 'Open' ? 'Has pending tasks' :
+                 mostRecentActivity.status === 'Resolved' ? 'Recently completed tasks' : 
+                 'Available') : 'No recent activities',
+            ...(mostRecentActivity && {
+                last_activity: {
                     category: allCategories.find(c => c.id === mostRecentActivity.category_id)?.name || mostRecentActivity.category_id,
                     details: mostRecentActivity.subcategory,
                     location: mostRecentActivity.location,
                     status: mostRecentActivity.status
-                } : null,
-                current_status: mostRecentActivity ?
-                    (mostRecentActivity.status === 'In Progress' ? 'Currently working on task' :
-                     mostRecentActivity.status === 'Open' ? 'Has pending tasks' :
-                     mostRecentActivity.status === 'Resolved' ? 'Recently completed tasks' :
-                     'Available') : 'No recent activities'
-            }
+                }
+            })
         };
     });
 
-    // Enhanced activity data with complete context
-    const enrichedActivities = activities.map(act => {
-        const staff = users.find(u => u.id === act.user_id);
-        const category = allCategories.find(c => c.id === act.category_id);
-        const assignedStaff = act.assigned_to_user_id ? users.find(u => u.id === act.assigned_to_user_id) : null;
-        
-        return {
-            id: act.id,
-            timestamp: act.timestamp,
-            staff: staff?.name || 'Unknown',
-            staff_role: staff?.role || 'Unknown',
-            category: category?.name || act.category_id,
-            subcategory: act.subcategory,
-            location: act.location,
-            status: act.status,
-            assigned_to: assignedStaff?.name || null,
-            assignment_instructions: act.assignment_instructions || null,
-            resolution_notes: act.resolution_notes || null,
-            has_photo: !!act.photo_url,
-            has_updates: act.updates && act.updates.length > 0,
-            ...(act.notes && { notes: act.notes }),
-            ...(act.latitude && act.longitude && { coordinates: `${act.latitude}, ${act.longitude}` })
-        };
-    });
+    // Streamlined activity data - only recent and essential info
+    const recentActivities = activities
+        .filter(act => new Date(act.timestamp) >= last30Days) // Only last 30 days for speed
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .slice(0, 50) // Limit to most recent 50 activities for performance
+        .map(act => {
+            const staff = users.find(u => u.id === act.user_id);
+            const category = allCategories.find(c => c.id === act.category_id);
+            
+            return {
+                staff: staff?.name || 'Unknown',
+                category: category?.name || act.category_id,
+                details: act.subcategory,
+                location: act.location,
+                status: act.status,
+                date: act.timestamp.split('T')[0], // Just date, not full timestamp
+                ...(act.assigned_to_user_id && {
+                    assigned_to: users.find(u => u.id === act.assigned_to_user_id)?.name
+                })
+            };
+        });
 
-    // Create comprehensive data structure for AI
+    // Compact data structure for faster processing
     const aiContext = {
-        dataset_summary: {
+        summary: {
             total_staff: users.length,
             total_activities: activities.length,
-            date_range: activities.length > 0 ? {
-                earliest: activities.reduce((earliest, act) =>
-                    new Date(act.timestamp) < new Date(earliest.timestamp) ? act : earliest
-                ).timestamp,
-                latest: activities.reduce((latest, act) =>
-                    new Date(act.timestamp) > new Date(latest.timestamp) ? act : latest
-                ).timestamp
-            } : null,
+            recent_activities: recentActivities.length,
             active_categories: Array.from(new Set(activities.map(a => allCategories.find(c => c.id === a.category_id)?.name || a.category_id))),
-            status_distribution: {
+            status_counts: {
                 unassigned: activities.filter(a => a.status === 'Unassigned').length,
                 open: activities.filter(a => a.status === 'Open').length,
                 in_progress: activities.filter(a => a.status === 'In Progress').length,
                 resolved: activities.filter(a => a.status === 'Resolved').length
             }
         },
-        all_staff_members: allStaffMembers,
-        activities: enrichedActivities,
-        categories: allCategories.map(cat => ({
-            id: cat.id,
-            name: cat.name,
-            is_system: cat.isSystem,
-            activity_count: activities.filter(a => a.category_id === cat.id).length
-        }))
+        team: allStaffMembers,
+        recent_activities: recentActivities
     };
 
-    return JSON.stringify(aiContext, null, 2);
+    return JSON.stringify(aiContext);
 };
 
 export async function GET(request: Request) {
@@ -218,7 +199,7 @@ export async function POST(request: Request) {
                 };
                 
                 const parsedData = await ai.generateStructuredContent(prompt, schema, {
-                    maxTokens: 500, // Limit initial summary to 500 tokens
+                    maxTokens: 300, // Reduced for faster responses
                     temperature: 0.7
                 }) as { analysis: string; suggestions: string[] };
                 
@@ -301,7 +282,7 @@ export async function POST(request: Request) {
                 // --- Streaming Response with Server-Sent Events ---
                 const streamResponse = await ai.generateContentStream(messages, {
                     systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-                    maxTokens: 800, // Limit streaming responses to 800 tokens for better UX
+                    maxTokens: 400, // Reduced for faster responses
                     temperature: 0.7
                 });
                 
@@ -382,7 +363,7 @@ export async function POST(request: Request) {
                 // --- Non-Streaming Response ---
                 const response = await ai.generateContent(contextualizedMessage, {
                     systemInstruction: CHAT_SYSTEM_INSTRUCTION,
-                    maxTokens: 600, // Limit non-streaming responses to 600 tokens 
+                    maxTokens: 300, // Reduced for faster responses
                     temperature: 0.7
                 });
                 
