@@ -112,8 +112,35 @@ export default function AppShell() {
   }, [categories]);
   
   const handleDeepDive = (params: URLSearchParams) => {
-    setSelectedCategory(params.get('category') || 'all');
-    setSearchTerm(params.get('search') || '');
+    // Handle category filtering
+    const category = params.get('category');
+    if (category) setSelectedCategory(category);
+    
+    // Handle search term filtering
+    const search = params.get('search');
+    if (search) setSearchTerm(search);
+    
+    // Handle user filtering
+    const user = params.get('user');
+    if (user) {
+      // Find user by name (case-insensitive) or ID
+      const foundUser = users.find(u =>
+        u.name.toLowerCase() === user.toLowerCase() || u.id === user
+      );
+      if (foundUser) setSelectedUserId(foundUser.id);
+    }
+    
+    // Handle date range filtering
+    const startDate = params.get('startDate');
+    const endDate = params.get('endDate');
+    if (startDate || endDate) {
+      setDateRange({
+        start: startDate || dateRange.start,
+        end: endDate || dateRange.end
+      });
+    }
+    
+    // Navigate to dashboard to show filtered results
     setView('dashboard');
   };
 
