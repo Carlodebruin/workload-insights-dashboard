@@ -74,6 +74,22 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const sdkHistoryRef = useRef<AIMessage[]>([]);
     
+    // Helper function to get API base URL
+    const getApiBaseUrl = () => {
+        if (typeof window === 'undefined') return '';
+        
+        // Use current origin to handle different ports
+        const { protocol, hostname, port } = window.location;
+        
+        // For development, use the current port, otherwise use relative URLs
+        if (process.env.NODE_ENV === 'development') {
+            return `${protocol}//${hostname}${port ? ':' + port : ''}`;
+        }
+        
+        // In production, use relative URLs for same-origin requests
+        return '';
+    };
+    
     // Client-side only initialization
     useEffect(() => {
         setIsClient(true);
@@ -118,7 +134,7 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
         
         const loadProviders = async () => {
             try {
-                const response = await fetch('/api/ai/providers');
+                const response = await fetch(`${getApiBaseUrl()}/api/ai/providers`);
                 const data = await response.json();
                 setAvailableProviders(data.available);
                 setSelectedProvider(data.default);
@@ -180,7 +196,12 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
             setSuggestions([]);
             setMessages([]);
             setError(null);
-            sdkHistoryRef.current = [];
+            // SURGICAL FIX: Ensure proper initialization of sdkHistoryRef
+            if (!sdkHistoryRef.current) {
+                sdkHistoryRef.current = [];
+            } else {
+                sdkHistoryRef.current.length = 0; // Clear existing history
+            }
             setStatusText('Preparing analysis...');
             
             if (typeof window !== 'undefined') {
@@ -208,7 +229,7 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
             setMessages([{ role: 'model', content: 'GENERATING_SUMMARY' }]);
 
             try {
-                const response = await fetch(`/api/ai/chat?provider=${selectedProvider}`, {
+                const response = await fetch(`${getApiBaseUrl()}/api/ai/chat?provider=${selectedProvider}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
@@ -262,46 +283,178 @@ const AIInsightsPage: React.FC<AIInsightsPageProps> = ({
         if (!prompt || isReplying || isGeneratingSummary) return;
 
         const userMessage: Message = { role: 'user', content: prompt };
-        setMessages(prev => [...prev, userMessage, { role: 'model', content: '' }]);
+        const assistantMessage: Message = { role: 'model', content: '' };
+        
+        // Get the current length before adding new messages
+        const currentLength = messages.length;
+        setMessages(prev => [...prev, userMessage, assistantMessage]);
         setIsReplying(true);
         setError(null);
         setSuggestions([]);
 
+        // SURGICAL FIX: Ensure sdkHistoryRef.current is initialized before push operation
+        if (!sdkHistoryRef.current) {
+            sdkHistoryRef.current = [];
+        }
         sdkHistoryRef.current.push({ role: 'user', content: prompt });
 
+        // Enable streaming for better performance and longer responses
+        const useStreaming = true;
+        // Calculate the correct index of the assistant message
+        // After adding user + assistant, assistant will be at currentLength + 1
+        const assistantMessageIndex = currentLength + 1;
+
         try {
-            const response = await fetch(`/api/ai/chat?provider=${selectedProvider}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    history: sdkHistoryRef.current,
-                    message: prompt,
-                    stream: false, // SURGICAL FIX: Force non-streaming mode to avoid SSE parsing issues
-                    context: { activities: filteredActivities, users, allCategories }
-                })
-            });
+            if (useStreaming) {
+                // --- Streaming Response Handling ---
+                const response = await fetch(`${getApiBaseUrl()}/api/ai/chat?provider=${selectedProvider}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        history: sdkHistoryRef.current,
+                        message: prompt,
+                        stream: true, // Enable streaming for real-time updates
+                        context: { activities: filteredActivities, users, allCategories }
+                    })
+                });
 
-            if (!response.ok) throw new Error(`Server error: ${response.status}`);
-            
-            const data = await response.json();
-            const currentContent = data.content || '';
-            
-            setMessages(prev => {
-                const newMessages = [...prev];
-                newMessages[newMessages.length - 1].content = currentContent;
-                return newMessages;
-            });
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                if (!response.body) throw new Error('No response body received');
 
-            const newModelMessage: Message = { role: 'model', content: currentContent };
-            const finalMessages = [...messages, userMessage, newModelMessage];
-            sdkHistoryRef.current.push({ role: 'assistant', content: currentContent });
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulatedContent = '';
+                let isComplete = false;
 
-            if (isClient) {
-                sessionStorage.setItem(sessionCacheKey, JSON.stringify({
-                    messages: finalMessages,
-                    suggestions: [], 
-                    sdkHistory: sdkHistoryRef.current
-                }));
+                while (!isComplete) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    const chunk = decoder.decode(value);
+                    const lines = chunk.split('\n').filter(line => line.trim());
+
+                    let currentEventType = '';
+                    let currentData = '';
+
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            currentEventType = line.substring(7).trim();
+                        } else if (line.startsWith('data: ')) {
+                            currentData = line.substring(6).trim();
+                            
+                            if (currentData === '[DONE]') {
+                                isComplete = true;
+                                break;
+                            }
+
+                            try {
+                                const data = JSON.parse(currentData);
+                                
+                                switch (data.type) {
+                                    case 'connected':
+                                        // Connection established, nothing to do
+                                        break;
+                                        
+                                    case 'content':
+                                        // Append content to the current message
+                                        accumulatedContent += data.content;
+                                        setMessages(prev => {
+                                            const newMessages = [...prev];
+                                            if (newMessages[assistantMessageIndex]) {
+                                                newMessages[assistantMessageIndex].content = accumulatedContent;
+                                            }
+                                            return newMessages;
+                                        });
+                                        break;
+                                        
+                                    case 'complete':
+                                        // Streaming complete, finalize the message
+                                        isComplete = true;
+                                        const finalContent = data.fullContent || accumulatedContent;
+                                        setMessages(prev => {
+                                            const newMessages = [...prev];
+                                            if (newMessages[assistantMessageIndex]) {
+                                                newMessages[assistantMessageIndex].content = finalContent;
+                                            }
+                                            return newMessages;
+                                        });
+                                        
+                                        // Update SDK history with final content
+                                        if (!sdkHistoryRef.current) {
+                                            sdkHistoryRef.current = [];
+                                        }
+                                        sdkHistoryRef.current.push({ role: 'assistant', content: finalContent });
+                                        
+                                        // Cache the session
+                                        if (isClient) {
+                                            const finalMessages = [...messages, userMessage, { role: 'model', content: finalContent }];
+                                            sessionStorage.setItem(sessionCacheKey, JSON.stringify({
+                                                messages: finalMessages,
+                                                suggestions: [],
+                                                sdkHistory: sdkHistoryRef.current
+                                            }));
+                                        }
+                                        break;
+                                        
+                                    case 'continuation':
+                                        // Handle continuation tokens for extremely long responses
+                                        console.log('[AI Streaming] Continuation token received:', data);
+                                        addToast('Long Response', 'Response continues in next message', 'info');
+                                        break;
+                                        
+                                    case 'error':
+                                        // Handle streaming errors
+                                        throw new Error(data.message || data.error || 'Streaming error occurred');
+                                }
+                            } catch (parseError) {
+                                console.warn('[AI Streaming] Failed to parse SSE data:', parseError, currentData);
+                            }
+                            
+                            // Reset for next event
+                            currentEventType = '';
+                            currentData = '';
+                        }
+                    }
+                }
+            } else {
+                // --- Fallback to Non-Streaming ---
+                const response = await fetch(`${getApiBaseUrl()}/api/ai/chat?provider=${selectedProvider}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        history: sdkHistoryRef.current,
+                        message: prompt,
+                        stream: false,
+                        context: { activities: filteredActivities, users, allCategories }
+                    })
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+                
+                const data = await response.json();
+                const currentContent = data.content || '';
+                
+                setMessages(prev => {
+                    const newMessages = [...prev];
+                    newMessages[newMessages.length - 1].content = currentContent;
+                    return newMessages;
+                });
+
+                const newModelMessage: Message = { role: 'model', content: currentContent };
+                const finalMessages = [...messages, userMessage, newModelMessage];
+                // SURGICAL FIX: Ensure sdkHistoryRef.current is initialized before push operation
+                if (!sdkHistoryRef.current) {
+                    sdkHistoryRef.current = [];
+                }
+                sdkHistoryRef.current.push({ role: 'assistant', content: currentContent });
+
+                if (isClient) {
+                    sessionStorage.setItem(sessionCacheKey, JSON.stringify({
+                        messages: finalMessages,
+                        suggestions: [],
+                        sdkHistory: sdkHistoryRef.current
+                    }));
+                }
             }
 
         } catch (e) {
