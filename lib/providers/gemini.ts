@@ -9,7 +9,7 @@ export class GeminiProvider implements AIProvider {
   constructor(apiKey?: string) {
     const key = apiKey || process.env.GEMINI_API_KEY;
     if (!key || key === 'test_key_for_development_health_check') {
-      throw new Error("GEMINI_API_KEY not configured properly. Please set a valid Gemini API key in your environment variables or pass it to the constructor.");
+      throw new Error("GEMINI_API_KEY not configured");
     }
     this.client = new GoogleGenerativeAI(key);
   }

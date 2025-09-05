@@ -4,6 +4,7 @@ import { NewActivityData, ActivityStatus } from '../../../../types';
 import { logSecureError, logSecureInfo, createRequestContext, extractSafeUserId } from '../../../../lib/secure-logger';
 import { whatsappConfig } from '../../../../lib/whatsapp/config';
 import { getWorkingAIProvider } from '../../../../lib/ai-factory';
+import { eventPublisher } from '../../../../lib/event-publisher-service';
 import type { Activity, ActivityUpdate, User, Category } from '@prisma/client';
 
 // Type for Activity with included relationships
@@ -448,6 +449,33 @@ export async function PUT(
       ...requestContext,
       statusCode: 200,
     });
+
+    // Broadcast real-time events
+    try {
+      if (type === 'status_update') {
+        const updateType = payload.status ? 'status' : 'general';
+        await eventPublisher.broadcastActivityUpdated(activityId, updateType);
+        
+        // Broadcast assignment change if assignment was modified
+        const statusUpdateData = payload as { assignToUserId?: string };
+        if (statusUpdateData.assignToUserId !== undefined) {
+          const currentActivity = await prisma.activity.findUnique({ where: { id: activityId } });
+          if (currentActivity) {
+            const oldAssigneeId = currentActivity.assigned_to_user_id || undefined;
+            const newAssigneeId = statusUpdateData.assignToUserId;
+            await eventPublisher.broadcastAssignmentChanged(activityId, oldAssigneeId, newAssigneeId);
+          }
+        }
+      } else if (type === 'full_update') {
+        await eventPublisher.broadcastActivityUpdated(activityId, 'general');
+      }
+    } catch (broadcastError) {
+      // Don't fail the request if broadcasting fails
+      logSecureError('Failed to broadcast activity update event',
+        createRequestContext('broadcast_activity_updated', 'PUT', undefined, activityId, undefined),
+        broadcastError instanceof Error ? broadcastError : undefined
+      );
+    }
     
     return NextResponse.json(serializedActivity);
   } catch (error) {

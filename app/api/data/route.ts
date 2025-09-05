@@ -58,18 +58,20 @@ export async function GET(request: NextRequest) {
   });
 
   try {
-    const { searchParams } = new URL(request.url);
-    
-    // Parse and validate pagination parameters
-    const queryParams = Object.fromEntries(searchParams.entries());
-    
-    logger.debug('Validating query parameters', logContext, { queryParams });
-    const { page, limit } = validateQuery(paginationSchema, queryParams);
-    
-    logger.info('Query parameters validated', { ...logContext, tags: ['validation'] }, { page, limit });
-    
-    // Calculate skip value for pagination
-    const skip = (page - 1) * limit;
+      const { searchParams } = new URL(request.url);
+      const startTime = Date.now();
+      
+      // Parse and validate pagination parameters with optimized defaults
+      const queryParams = Object.fromEntries(searchParams.entries());
+      
+      logger.debug('Validating query parameters', logContext, { queryParams });
+      const { page, limit = 200 } = validateQuery(paginationSchema, queryParams);
+      
+      logger.info('Query parameters validated', { ...logContext, tags: ['validation'] }, { page, limit });
+      
+      // Calculate skip value for pagination with safety limits
+      const safeLimit = Math.min(limit, 500); // Prevent excessive data retrieval
+      const skip = (page - 1) * safeLimit;
 
     // Fetch users and categories with selective field retrieval for better performance
     logger.debug('Starting database queries', logContext, { operation: 'fetch_users_categories' });
@@ -114,7 +116,7 @@ export async function GET(request: NextRequest) {
     const [activities, totalActivities] = await Promise.all([
       prisma.activity.findMany({
         skip,
-        take: limit,
+        take: safeLimit,
         select: {
           id: true,
           user_id: true,
@@ -156,28 +158,34 @@ export async function GET(request: NextRequest) {
     logger.logDatabaseOperation('fetch_activities_paginated', logContext, activitiesFetchTime, activities.length);
     
     // Log pagination statistics
-    logger.info('Activities fetched with pagination', { 
-      ...logContext, 
-      tags: ['database', 'pagination'] 
+    logger.info('Activities fetched with pagination', {
+      ...logContext,
+      tags: ['database', 'pagination']
     }, {
       totalActivities,
-      pageSize: limit,
+      pageSize: safeLimit,
       currentPage: page,
-      fetchedCount: activities.length
+      fetchedCount: activities.length,
+      estimatedTotalPages: Math.ceil(totalActivities / safeLimit)
     });
 
-    // Convert Date objects to ISO strings for JSON serialization
-    const serializedActivities: OptimizedActivity[] = activities.map((activity) => ({
-      ...activity,
-      timestamp: activity.timestamp.toISOString(),
-      updates: activity.updates.map((update): OptimizedActivityUpdate => ({
-        ...update,
-        timestamp: update.timestamp.toISOString(),
-      })),
-    }));
+    // Convert Date objects to ISO strings for JSON serialization with optimized approach
+    const serializedActivities: OptimizedActivity[] = new Array(activities.length);
+    
+    for (let i = 0; i < activities.length; i++) {
+      const activity = activities[i];
+      serializedActivities[i] = {
+        ...activity,
+        timestamp: activity.timestamp.toISOString(),
+        updates: activity.updates.map((update): OptimizedActivityUpdate => ({
+          ...update,
+          timestamp: update.timestamp.toISOString(),
+        })),
+      };
+    }
 
-    // Calculate pagination metadata
-    const totalPages = Math.ceil(totalActivities / limit);
+    // Calculate pagination metadata with optimized calculations
+    const totalPages = Math.ceil(totalActivities / safeLimit);
     const hasNextPage = page < totalPages;
     const hasPreviousPage = page > 1;
 
@@ -189,7 +197,7 @@ export async function GET(request: NextRequest) {
         currentPage: page,
         totalPages,
         totalRecords: totalActivities,
-        pageSize: limit,
+        pageSize: safeLimit,
         hasNextPage,
         hasPreviousPage,
       },
@@ -218,10 +226,19 @@ export async function GET(request: NextRequest) {
       activityCount: serializedActivities.length,
       totalActivities,
       page,
-      limit
+      limit: safeLimit
     });
 
-    return NextResponse.json(responseData);
+    // Use streaming response for better performance with large datasets
+    const response = NextResponse.json(responseData);
+    
+    // Add performance headers for optimized delivery
+    response.headers.set('X-Response-Time', `${Date.now() - startTime}ms`);
+    response.headers.set('X-Total-Records', totalActivities.toString());
+    response.headers.set('X-Page-Size', safeLimit.toString());
+    response.headers.set('Cache-Control', 'public, max-age=30, stale-while-revalidate=60');
+    
+    return response;
   } catch (error) {
     // Handle validation errors specifically
     if (error instanceof Error && error.message.includes('validation failed')) {

@@ -2,6 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Activity, User, Category, ActivityStatus, ActivityUpdate } from '../types';
 import { HeartPulse, Users as UsersIcon, Building, Banknote, Wrench, Mic, CalendarClock, MapPin, ImageOff, MessageSquare, MoreVertical, Edit, Trash2, CheckCircle, Clock, GitPullRequest, UserCheck, MessageSquarePlus, Info, Paperclip, Play, AlertCircle } from 'lucide-react';
 import ImageModal from './ImageModal';
+import { useMobileDetection } from '../hooks/useMobileDetection';
+import { useSwipeGestures } from '../hooks/useSwipeGestures';
+import { featureFlags } from '../lib/feature-flags';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -99,6 +102,9 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
   
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  
+  const { isMobile, isTouchDevice } = useMobileDetection();
+  const shouldOptimizeForMobile = featureFlags.mobileTouchOptimization && (isMobile || isTouchDevice);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -118,23 +124,55 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
   const formattedTimestamp = new Date(timestamp).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
   const categoryName = category?.name || 'Uncategorized';
   
-  const cardClasses = `bg-secondary/30 border rounded-lg p-4 flex flex-col justify-between transition-all duration-500 hover:border-primary/50 relative cursor-pointer ${isHighlighted ? "border-primary shadow-lg shadow-primary/20" : "border-border"}`;
-  const actionButtonStyles = "px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors flex-1 text-center";
+  // NEW: Add swipe gesture functionality
+  const { touchHandlers, isGesturing, swipeDirection, swipeDistance } = useSwipeGestures({
+    onSwipeLeft: () => onEdit(activity),
+    onSwipeRight: () => onViewDetails(activity),
+    threshold: 75,
+    preventScroll: shouldOptimizeForMobile
+  });
+
+  // Calculate swipe transform for visual feedback
+  const swipeTransform = isGesturing && swipeDirection !== 'none'
+    ? `translateX(${swipeDirection === 'left' ? -swipeDistance : swipeDistance}px)`
+    : 'translateX(0)';
+
+  const cardClasses = `bg-secondary/30 border rounded-lg p-4 flex flex-col justify-between transition-all duration-500 hover:border-primary/50 relative cursor-pointer touch-manipulation ${isHighlighted ? "border-primary shadow-lg shadow-primary/20" : "border-border"} ${shouldOptimizeForMobile ? 'touch-optimized' : ''} ${isGesturing ? 'transition-transform duration-150' : ''}`;
+  const actionButtonStyles = `px-2.5 py-1.5 text-xs font-semibold rounded-md transition-colors flex-1 text-center ${shouldOptimizeForMobile ? 'min-h-touch min-w-touch touch:p-3' : ''}`;
 
 
   return (
     <>
-      <div 
-        className={cardClasses} 
-        style={{ height: 'calc(100% - 1rem)'}}
+      <div
+        className={cardClasses}
+        style={{
+          height: 'calc(100% - 1rem)',
+          transform: swipeTransform,
+          opacity: isGesturing ? 0.95 : 1
+        }}
         onClick={() => onViewDetails(activity)}
+        {...(shouldOptimizeForMobile ? touchHandlers : {})}
       >
+        {/* NEW: Visual feedback for swipe gestures */}
+        {isGesturing && shouldOptimizeForMobile && (
+          <div className="absolute inset-0 pointer-events-none">
+            <div className={`absolute top-0 bottom-0 w-20 flex items-center justify-center ${
+              swipeDirection === 'left' ? 'left-0 bg-blue-500/20' : 'right-0 bg-green-500/20'
+            } transition-opacity duration-150 rounded-lg`}>
+              {swipeDirection === 'left' ? (
+                <Edit size={24} className="text-blue-500" />
+              ) : (
+                <Info size={24} className="text-green-500" />
+              )}
+            </div>
+          </div>
+        )}
         <div className="flex-grow flex flex-col min-h-0">
           <div className="absolute top-2 right-2 z-20">
               <button
                   ref={menuButtonRef}
                   onClick={(e) => { e.stopPropagation(); setIsMenuOpen(prev => !prev); }}
-                  className="p-1 rounded-full text-muted-foreground hover:bg-secondary/80 hover:text-foreground"
+                  className="p-2 rounded-full text-muted-foreground hover:bg-secondary/80 hover:text-foreground min-h-touch min-w-touch touch:p-3"
                   aria-label="Activity options"
               >
                   <MoreVertical size={18} />
@@ -166,7 +204,7 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                 <div className="flex-shrink-0 w-full sm:w-24 h-24">
                     <button
                       onClick={(e) => { e.stopPropagation(); openImageModal(photo_url); }}
-                      className="w-full h-full block rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background"
+                      className="w-full h-full block rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 focus:ring-offset-background min-h-touch"
                       aria-label={`View larger image for ${subcategory}`}
                     >
                       <img
@@ -178,8 +216,8 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                 </div>
             )}
             <div className="flex-grow">
-                <div 
-                    className="pr-8 cursor-pointer hover:bg-secondary/20 rounded-md p-2 -m-2 transition-colors"
+                <div
+                    className="pr-8 cursor-pointer hover:bg-secondary/20 rounded-md p-2 -m-2 transition-colors touch:p-3"
                     onClick={(e) => { e.stopPropagation(); setIsExpanded(!isExpanded); }}
                     title="Click to expand task details"
                 >
@@ -216,15 +254,15 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                             {activity.resolution_notes && <div><strong>Resolution:</strong> {activity.resolution_notes}</div>}
                         </div>
                         <div className="flex gap-2 mt-3">
-                            <button 
+                            <button
                                 onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }}
-                                className="px-3 py-1.5 bg-primary text-primary-foreground text-xs rounded-md hover:bg-primary/90 transition-colors"
+                                className="px-3 py-2 bg-primary text-primary-foreground text-xs rounded-md hover:bg-primary/90 transition-colors min-h-touch touch:px-4 touch:py-3"
                             >
                                 Manage Task
                             </button>
-                            <button 
+                            <button
                                 onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }}
-                                className="px-3 py-1.5 bg-secondary text-secondary-foreground text-xs rounded-md hover:bg-secondary/80 transition-colors"
+                                className="px-3 py-2 bg-secondary text-secondary-foreground text-xs rounded-md hover:bg-secondary/80 transition-colors min-h-touch touch:px-4 touch:py-3"
                             >
                                 Add Progress Note
                             </button>
@@ -264,26 +302,26 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                 <div className="flex items-center gap-2">
                     {activity.status === 'Unassigned' && (
                         <>
-                            <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-primary text-primary-foreground hover:bg-primary/90`}>
+                            <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-primary text-primary-foreground hover:bg-primary/90 min-h-touch touch:px-4 touch:py-3`}>
                                 Assign Task
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
+                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80 min-h-touch touch:px-4 touch:py-3`}>
                                 Mark as Open
                             </button>
                         </>
                     )}
                     {(activity.status === 'Open' || activity.status === 'In Progress') && (
                         <>
-                             <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80`}>
+                             <button onClick={(e) => { e.stopPropagation(); onTaskAction(activity); }} className={`${actionButtonStyles} bg-secondary text-secondary-foreground hover:bg-secondary/80 min-h-touch touch:px-4 touch:py-3`}>
                                 Update / Reassign
                             </button>
-                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Resolved'); }} className={`${actionButtonStyles} bg-green-600 text-white hover:bg-green-700`}>
+                            <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Resolved'); }} className={`${actionButtonStyles} bg-green-600 text-white hover:bg-green-700 min-h-touch touch:px-4 touch:py-3`}>
                                 Close Task
                             </button>
                         </>
                     )}
                     {activity.status === 'Resolved' && (
-                        <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-yellow-500 text-white hover:bg-yellow-600 w-full`}>
+                        <button onClick={(e) => { e.stopPropagation(); onQuickStatusChange(activity.id, 'Open'); }} className={`${actionButtonStyles} bg-yellow-500 text-white hover:bg-yellow-600 w-full min-h-touch touch:px-4 touch:py-3`}>
                             Reopen Task
                         </button>
                     )}
@@ -295,10 +333,10 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                         {activity.status === 'Open' && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'In Progress', 'What are you starting to work on?'); }}
-                                className="px-2 py-1 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded-md transition-colors flex items-center gap-1"
+                                className="px-3 py-2 text-xs bg-blue-500 text-white hover:bg-blue-600 rounded-md transition-colors flex items-center gap-1 min-h-touch touch:px-4 touch:py-3"
                                 title="Start work with note"
                             >
-                                <Play size={12} />
+                                <Play size={14} />
                                 Start Work
                             </button>
                         )}
@@ -306,29 +344,29 @@ const ActivityCard: React.FC<ActivityCardProps> = ({ activity, user, assignedUse
                             <>
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, activity.status, 'What progress have you made?'); }}
-                                    className="px-2 py-1 text-xs bg-orange-500 text-white hover:bg-orange-600 rounded-md transition-colors flex items-center gap-1"
+                                    className="px-3 py-2 text-xs bg-orange-500 text-white hover:bg-orange-600 rounded-md transition-colors flex items-center gap-1 min-h-touch touch:px-4 touch:py-3"
                                     title="Add progress note"
                                 >
-                                    <MessageSquare size={12} />
+                                    <MessageSquare size={14} />
                                     Progress Note
                                 </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'Resolved', 'How was this resolved?'); }}
-                                    className="px-2 py-1 text-xs bg-green-500 text-white hover:bg-green-600 rounded-md transition-colors flex items-center gap-1"
-                                    title="Complete with note"
-                                >
-                                    <CheckCircle size={12} />
-                                    Complete
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'Resolved', 'How was this resolved?'); }}
+                                        className="px-3 py-2 text-xs bg-green-500 text-white hover:bg-green-600 rounded-md transition-colors flex items-center gap-1 min-h-touch touch:px-4 touch:py-3"
+                                        title="Complete with note"
+                                    >
+                                        <CheckCircle size={14} />
+                                        Complete
                                 </button>
                             </>
                         )}
                         {activity.status === 'Resolved' && (
                             <button 
                                 onClick={(e) => { e.stopPropagation(); onQuickStatusNote(activity, 'Open', 'Why is this being reopened?'); }}
-                                className="px-2 py-1 text-xs bg-yellow-500 text-white hover:bg-yellow-600 rounded-md transition-colors flex items-center gap-1"
+                                className="px-3 py-2 text-xs bg-yellow-500 text-white hover:bg-yellow-600 rounded-md transition-colors flex items-center gap-1 min-h-touch touch:px-4 touch:py-3"
                                 title="Reopen with note"
                             >
-                                <AlertCircle size={12} />
+                                <AlertCircle size={14} />
                                 Reopen
                             </button>
                         )}

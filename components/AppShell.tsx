@@ -12,12 +12,13 @@ import { useMockData } from '../hooks/useMockData';
 import { useToast } from '../hooks/useToast';
 import AddIncidentModal from './AddIncidentModal';
 import TaskActionModal from './TaskActionModal';
-import TaskDetailsModal from './TaskDetailsModal';
+import { TaskDetailsModal } from './lazy/LazyComponentWrappers';
 import GeofencePrompt from './GeofencePrompt';
 import QuickStatusNoteModal from './QuickStatusNoteModal';
 import { fetchInitialData } from '../lib/api';
 import DashboardSkeleton from './DashboardSkeleton';
 import DynamicMapView from './dynamic/DynamicMapView';
+import { useRealtimeUpdates } from '../hooks/useRealtimeUpdates';
 
 const FILTERS_STORAGE_KEY = 'workload_insights_filters';
 
@@ -70,6 +71,31 @@ export default function AppShell() {
           setLoading(false);
       });
   }, []);
+
+  // Real-time updates integration
+  const { isConnected, lastUpdate, connectionStatus, reconnect } = useRealtimeUpdates();
+
+  // Handle real-time events to refresh data
+  useEffect(() => {
+    if (lastUpdate) {
+      console.log('Real-time event received, refreshing data:', lastUpdate.type);
+      
+      // Refresh data when relevant events occur
+      if (lastUpdate.type === 'activity_created' || lastUpdate.type === 'activity_updated' || lastUpdate.type === 'assignment_changed') {
+        console.log('Refreshing dashboard data due to real-time update');
+        setLoading(true);
+        fetchInitialData()
+          .then(newData => {
+            setAppData(newData);
+            setLoading(false);
+          })
+          .catch(err => {
+            console.error('Failed to refresh data after real-time update:', err);
+            setLoading(false);
+          });
+      }
+    }
+  }, [lastUpdate]);
 
   const { users, activities, categories } = appData;
   const { addToast } = useToast();
@@ -360,6 +386,7 @@ export default function AppShell() {
 
 
   return (
+    <>
       <div className="min-h-screen bg-background text-foreground font-sans">
         <Header view={view} setView={setView} />
         <main className="p-4 sm:p-6 lg:p-8">
@@ -382,10 +409,10 @@ export default function AppShell() {
         )}
         {isQuickNoteModalOpen && quickNoteData && (
             <QuickStatusNoteModal
-                isOpen={isQuickNoteModalOpen} 
-                onClose={handleCloseQuickNoteModal} 
+                isOpen={isQuickNoteModalOpen}
+                onClose={handleCloseQuickNoteModal}
                 onSave={handleSaveQuickStatusNote}
-                activity={quickNoteData.activity} 
+                activity={quickNoteData.activity}
                 targetStatus={quickNoteData.targetStatus}
                 notePrompt={quickNoteData.notePrompt}
                 currentUser={users[0] || { id: '1', name: 'User', role: 'Admin', phone_number: '' }}
@@ -406,5 +433,39 @@ export default function AppShell() {
             />
         )}
       </div>
+      
+      {/* Real-time connection status indicator (floating in bottom right) */}
+      <div className="fixed bottom-4 right-4 z-50">
+        <div className={`
+          flex items-center space-x-2 px-3 py-2 rounded-lg text-sm font-medium shadow-lg border
+          ${connectionStatus === 'connected' ? 'bg-green-100 text-green-800 border-green-300' :
+            connectionStatus === 'connecting' ? 'bg-blue-100 text-blue-800 border-blue-300' :
+            connectionStatus === 'error' ? 'bg-red-100 text-red-800 border-red-300' :
+            'bg-gray-100 text-gray-800 border-gray-300'}
+        `}>
+          <div className={`
+            w-2 h-2 rounded-full
+            ${connectionStatus === 'connected' ? 'bg-green-500' :
+              connectionStatus === 'connecting' ? 'bg-blue-500 animate-pulse' :
+              connectionStatus === 'error' ? 'bg-red-500' :
+              'bg-gray-500'}
+          `}></div>
+          <span>
+            {connectionStatus === 'connected' ? 'Live' :
+             connectionStatus === 'connecting' ? 'Connecting...' :
+             connectionStatus === 'error' ? 'Connection lost' :
+             'Offline'}
+          </span>
+          {connectionStatus === 'error' && (
+            <button
+              onClick={reconnect}
+              className="ml-2 px-2 py-1 text-xs bg-red-200 text-red-800 rounded hover:bg-red-300 transition-colors"
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }

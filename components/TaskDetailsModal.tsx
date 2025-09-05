@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { X, Calendar, MapPin, User, Users, Clock, GitPullRequest, CheckCircle, MessageSquare, Edit, Trash2, UserCheck, AlertCircle, FileText, History, Settings, Plus } from 'lucide-react';
+import { X, Calendar, MapPin, User, Users, Clock, GitPullRequest, CheckCircle, MessageSquare, Edit, Trash2, UserCheck, AlertCircle, FileText, History, Settings, Plus, Eye } from 'lucide-react';
 import { Activity, User as UserType, Category, ActivityStatus, ActivityUpdate } from '../types';
 import Spinner from './Spinner';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { usePresence } from '../hooks/usePresence';
 
 interface TaskDetailsModalProps {
   isOpen: boolean;
@@ -35,9 +36,31 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   const [selectedUserId, setSelectedUserId] = useState(activity.assigned_to_user_id || '');
   const [instructions, setInstructions] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [optimisticAssignment, setOptimisticAssignment] = useState<{
+    userId: string;
+    instructions?: string;
+    pending: boolean;
+    error?: string;
+  } | null>(null);
+  const [assignmentHistory, setAssignmentHistory] = useState<string[]>([]);
+  const [showAssignmentPreview, setShowAssignmentPreview] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
 
   useFocusTrap(modalRef, isOpen);
+
+  // Get user information for presence tracking
+  const user = users.find(u => u.id === activity.user_id);
+  const assignedUser = users.find(u => u.id === activity.assigned_to_user_id);
+  const category = categories.find(c => c.id === activity.category_id);
+
+  // NEW: Presence tracking for collaborative features
+  const { otherViewers, updatePresence, markAway } = usePresence({
+    activityId: activity.id,
+    userId: activity.user_id, // Using reporter ID for simplicity - in real app would use current user ID
+    userName: user?.name || 'Unknown User',
+    autoTrack: isOpen,
+    listenForUpdates: true
+  });
 
   // Reset form when modal opens
   useEffect(() => {
@@ -46,8 +69,56 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
       setNewNote('');
       setSelectedUserId(activity.assigned_to_user_id || '');
       setInstructions('');
+      setOptimisticAssignment(null);
+      setShowAssignmentPreview(false);
+      
+      // NEW: Update presence when modal opens
+      if (isOpen) {
+        updatePresence(activity.id);
+      }
     }
-  }, [isOpen, activity]);
+  }, [isOpen, activity, updatePresence]);
+
+  // NEW: Mark user as away when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      markAway();
+    }
+  }, [isOpen, markAway]);
+
+  // Load assignment history from localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const history = localStorage.getItem('assignmentHistory');
+      if (history) {
+        try {
+          setAssignmentHistory(JSON.parse(history));
+        } catch {
+          setAssignmentHistory([]);
+        }
+      }
+    }
+  }, [isOpen]);
+
+  // Auto-save instructions to localStorage
+  useEffect(() => {
+    if (instructions.trim() && typeof window !== 'undefined') {
+      const timeoutId = setTimeout(() => {
+        localStorage.setItem('lastAssignmentInstructions', instructions);
+      }, 1000);
+      return () => clearTimeout(timeoutId);
+    }
+  }, [instructions]);
+
+  // Load last used instructions
+  useEffect(() => {
+    if (isOpen && typeof window !== 'undefined') {
+      const lastInstructions = localStorage.getItem('lastAssignmentInstructions');
+      if (lastInstructions) {
+        setInstructions(lastInstructions);
+      }
+    }
+  }, [isOpen]);
 
   const handleEscKey = useCallback((event: KeyboardEvent) => {
     if (event.key === 'Escape') onClose();
@@ -76,14 +147,77 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
     }
   };
 
-  const handleAssign = async () => {
+  const handleOptimisticAssignment = async () => {
     if (!selectedUserId) return;
-    setIsLoading(true);
+    
+    // Set optimistic UI update immediately
+    setOptimisticAssignment({
+      userId: selectedUserId,
+      instructions: instructions.trim() || undefined,
+      pending: true
+    });
+
+    // Add to assignment history for smart defaults
+    const uniqueHistory = Array.from(new Set([selectedUserId, ...assignmentHistory]));
+    const newHistory = uniqueHistory.slice(0, 5);
+    setAssignmentHistory(newHistory);
+    localStorage.setItem('assignmentHistory', JSON.stringify(newHistory));
+
     try {
+      // Call existing assignment function
       await onAssign(activity.id, selectedUserId, instructions.trim() || undefined);
-      setInstructions('');
-    } finally {
-      setIsLoading(false);
+      
+      // Clear optimistic state on success
+      setOptimisticAssignment(null);
+      setShowAssignmentPreview(false);
+      
+      // Auto-switch to overview tab to see the assignment
+      setActiveTab('overview');
+      
+    } catch (error) {
+      // Rollback optimistic update on error
+      setOptimisticAssignment({
+        userId: selectedUserId,
+        instructions: instructions.trim() || undefined,
+        pending: false,
+        error: error instanceof Error ? error.message : 'Assignment failed'
+      });
+      
+      // Auto-clear error after 3 seconds
+      setTimeout(() => {
+        setOptimisticAssignment(null);
+      }, 3000);
+    }
+  };
+
+  const handleQuickAssign = (userId: string) => {
+    setSelectedUserId(userId);
+    setShowAssignmentPreview(true);
+    
+    // Auto-focus instructions field for quick input
+    setTimeout(() => {
+      const instructionsField = document.querySelector('textarea[placeholder*="instructions"]') as HTMLTextAreaElement;
+      if (instructionsField) {
+        instructionsField.focus();
+      }
+    }, 100);
+  };
+
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    // Quick assignment with number keys (1-5)
+    if (event.key >= '1' && event.key <= '5') {
+      const index = parseInt(event.key) - 1;
+      const recentUsers = assignmentHistory.slice(0, 5);
+      if (recentUsers[index]) {
+        event.preventDefault();
+        handleQuickAssign(recentUsers[index]);
+      }
+    }
+    
+    // Submit with Enter in instructions field
+    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      handleOptimisticAssignment();
     }
   };
 
@@ -107,10 +241,6 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
   };
 
   if (!isOpen) return null;
-
-  const user = users.find(u => u.id === activity.user_id);
-  const assignedUser = users.find(u => u.id === activity.assigned_to_user_id);
-  const category = categories.find(c => c.id === activity.category_id);
 
   const statusConfig = {
     'Unassigned': { icon: <MessageSquare size={16} />, color: "bg-gray-500", label: "Unassigned" },
@@ -149,6 +279,14 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
               <span className="text-sm text-muted-foreground">
                 #{activity.id.slice(-6).toUpperCase()}
               </span>
+              
+              {/* NEW: Subtle presence indicators */}
+              {otherViewers.length > 0 && (
+                <div className="flex items-center text-xs text-muted-foreground bg-secondary/50 px-2 py-1 rounded-full">
+                  <Eye size={12} className="mr-1" />
+                  {otherViewers.length} other{otherViewers.length > 1 ? 's' : ''} viewing
+                </div>
+              )}
             </div>
             <h2 id="task-details-title" className="text-xl font-semibold mb-1 truncate">
               {activity.subcategory}
@@ -164,9 +302,9 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
               </span>
             </p>
           </div>
-          <button 
-            onClick={onClose} 
-            className="p-2 rounded-full text-muted-foreground hover:bg-secondary transition-colors" 
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full text-muted-foreground hover:bg-secondary transition-colors"
             aria-label="Close dialog"
           >
             <X size={20} />
@@ -382,13 +520,47 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
                 <h3 className="font-semibold mb-3 flex items-center gap-2">
                   <UserCheck size={16} />
                   Task Assignment
+                  {assignmentHistory.length > 0 && (
+                    <span className="text-xs text-muted-foreground ml-2">
+                      Press 1-5 for quick assign
+                    </span>
+                  )}
                 </h3>
+                
+                {/* Quick Assign Buttons */}
+                {assignmentHistory.length > 0 && (
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium text-muted-foreground mb-2">Quick Assign</label>
+                    <div className="flex flex-wrap gap-2">
+                      {assignmentHistory.slice(0, 5).map((userId, index) => {
+                        const user = users.find(u => u.id === userId);
+                        if (!user) return null;
+                        
+                        return (
+                          <button
+                            key={userId}
+                            onClick={() => handleQuickAssign(userId)}
+                            className="px-3 py-1.5 text-xs rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors flex items-center gap-1"
+                            title={`Quick assign to ${user.name} (Press ${index + 1})`}
+                          >
+                            <span className="text-xs opacity-60">{index + 1}</span>
+                            {user.name.split(' ')[0]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <div className="space-y-3">
                   <div>
                     <label className="block text-sm font-medium text-muted-foreground mb-1">Assign To</label>
-                    <select 
-                      value={selectedUserId} 
-                      onChange={(e) => setSelectedUserId(e.target.value)}
+                    <select
+                      value={selectedUserId}
+                      onChange={(e) => {
+                        setSelectedUserId(e.target.value);
+                        setShowAssignmentPreview(true);
+                      }}
                       className="bg-input border border-border rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary"
                     >
                       <option value="">Select a staff member...</option>
@@ -399,24 +571,81 @@ const TaskDetailsModal: React.FC<TaskDetailsModalProps> = ({
                       ))}
                     </select>
                   </div>
+
+                  {showAssignmentPreview && selectedUserId && (
+                    <div className="bg-blue-50 dark:bg-blue-950/20 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-sm font-medium text-blue-800 dark:text-blue-200">
+                          Assignment Preview
+                        </span>
+                        <button
+                          onClick={() => setShowAssignmentPreview(false)}
+                          className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200 text-xs"
+                        >
+                          Hide
+                        </button>
+                      </div>
+                      <div className="text-sm text-blue-700 dark:text-blue-300">
+                        Assigning to: <strong>{users.find(u => u.id === selectedUserId)?.name}</strong>
+                      </div>
+                    </div>
+                  )}
+
                   <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">Instructions (Optional)</label>
+                    <label className="block text-sm font-medium text-muted-foreground mb-1">
+                      Instructions (Optional)
+                      <span className="text-xs text-muted-foreground ml-1">
+                        — Auto-saved • Ctrl+Enter to assign
+                      </span>
+                    </label>
                     <textarea
                       value={instructions}
                       onChange={(e) => setInstructions(e.target.value)}
+                      onKeyDown={handleKeyPress}
                       placeholder="Provide specific instructions for this assignment..."
                       rows={2}
                       className="bg-input border border-border rounded-md px-3 py-2 text-sm w-full focus:outline-none focus:ring-2 focus:ring-primary"
                     />
                   </div>
-                  <button
-                    onClick={handleAssign}
-                    disabled={!selectedUserId || isLoading}
-                    className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-wait flex items-center gap-2"
-                  >
-                    {isLoading && <Spinner size="sm" />}
-                    {activity.assigned_to_user_id ? 'Reassign Task' : 'Assign Task'}
-                  </button>
+
+                  {/* Optimistic UI State */}
+                  {optimisticAssignment?.pending && (
+                    <div className="bg-yellow-50 dark:bg-yellow-950/20 p-3 rounded-md border border-yellow-200 dark:border-yellow-800">
+                      <div className="flex items-center gap-2 text-yellow-800 dark:text-yellow-200 text-sm">
+                        <Spinner size="sm" />
+                        Assigning to {users.find(u => u.id === optimisticAssignment.userId)?.name}...
+                      </div>
+                    </div>
+                  )}
+
+                  {optimisticAssignment?.error && (
+                    <div className="bg-red-50 dark:bg-red-950/20 p-3 rounded-md border border-red-200 dark:border-red-800">
+                      <div className="flex items-center gap-2 text-red-800 dark:text-red-200 text-sm">
+                        <AlertCircle size={14} />
+                        {optimisticAssignment.error}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleOptimisticAssignment}
+                      disabled={!selectedUserId || optimisticAssignment?.pending}
+                      className="px-4 py-2 text-sm rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:bg-muted disabled:cursor-wait flex items-center gap-2 flex-1"
+                    >
+                      {optimisticAssignment?.pending && <Spinner size="sm" />}
+                      {activity.assigned_to_user_id ? 'Reassign Task' : 'Assign Task'}
+                    </button>
+                    
+                    {showAssignmentPreview && (
+                      <button
+                        onClick={() => setShowAssignmentPreview(false)}
+                        className="px-3 py-2 text-sm rounded-md bg-secondary text-secondary-foreground hover:bg-secondary/80 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 

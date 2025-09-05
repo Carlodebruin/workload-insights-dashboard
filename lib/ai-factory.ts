@@ -64,7 +64,7 @@ function trackFallback(fromProvider: AIProviderType, toProvider: AIProviderType,
 }
 
 // Check if an error should trigger fallback
-function shouldFallback(error: Error): boolean {
+export function shouldFallback(error: Error): boolean {
   // Always fallback for these DeepSeek errors
   if (error instanceof DeepSeekRateLimitError || error instanceof DeepSeekTimeoutError) {
     return true;
@@ -167,6 +167,9 @@ export async function getWorkingAIProvider(): Promise<AIProvider> {
     },
   });
 
+  let allProvidersFailed = true;
+  let lastFallbackError: Error | null = null;
+
   for (const config of configurations) {
     let apiKey: string | undefined = undefined;
     if (config.apiKey) {
@@ -196,7 +199,7 @@ export async function getWorkingAIProvider(): Promise<AIProvider> {
         });
         return providerInstance;
       } else if (testResult.shouldFallback && testResult.error) {
-        // Log potential fallback candidate
+        // Track that we have a fallback candidate but continue to try others
         logger.warn(`Provider ${config.provider} failed but may need fallback`, {
           operation: 'provider_evaluation'
         }, {
@@ -204,11 +207,25 @@ export async function getWorkingAIProvider(): Promise<AIProvider> {
           errorType: testResult.error.name,
           shouldFallback: testResult.shouldFallback
         });
-        
-        // Continue to try other providers for fallback
+        lastFallbackError = testResult.error;
         continue;
+      } else {
+        // Provider failed but shouldn't fallback (non-critical error)
+        allProvidersFailed = false;
       }
     }
+  }
+  
+  // If all configured providers failed with fallback-eligible errors, use mock provider
+  if (allProvidersFailed && configurations.length > 0 && lastFallbackError) {
+    logger.warn('All configured AI providers failed with fallback-eligible errors, using mock provider', {
+      operation: 'fallback_to_mock_all_failed'
+    }, {
+      totalConfigurations: configurations.length,
+      lastErrorType: lastFallbackError.name,
+      lastErrorMessage: lastFallbackError.message
+    });
+    return new MockProvider();
   }
   
   // Fallback to mock provider if no database-configured provider works

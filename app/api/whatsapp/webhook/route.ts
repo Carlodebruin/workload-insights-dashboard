@@ -41,13 +41,14 @@ export async function POST(request: NextRequest) {
     }
 
     // Process incoming messages
+    let responseMessage = 'Message received successfully.';
     if (body.entry && body.entry.length > 0) {
       for (const entry of body.entry) {
         if (entry.changes && entry.changes.length > 0) {
           for (const change of entry.changes) {
             if (change.field === 'messages' && change.value && change.value.messages) {
               for (const message of change.value.messages) {
-                await processWhatsAppMessage(message, change.value, requestContext);
+                responseMessage = await processWhatsAppMessage(message, change.value, requestContext);
               }
             }
           }
@@ -55,15 +56,25 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    // Return TwiML response instead of JSON
+    return createTwiMLResponse(responseMessage);
   } catch (error) {
     logSecureError('WhatsApp webhook processing error', requestContext, error instanceof Error ? error : undefined);
     console.error('❌ WhatsApp webhook error:', error);
-    return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
+    return createTwiMLResponse('We couldn\'t process your message. Please try again later.');
   }
 }
 
-async function processWhatsAppMessage(message: any, webhookValue: any, requestContext: any) {
+// TwiML Response Function
+function createTwiMLResponse(message: string): NextResponse {
+  const twiml = `<?xml version="1.0" encoding="UTF-8"?><Response><Message><Body>${message}</Body></Message></Response>`;
+  return new NextResponse(twiml, {
+    status: 200,
+    headers: { 'Content-Type': 'text/xml' },
+  });
+}
+
+async function processWhatsAppMessage(message: any, webhookValue: any, requestContext: any): Promise<string> {
   try {
     console.log('📱 Processing WhatsApp message:', message);
 
@@ -84,7 +95,7 @@ async function processWhatsAppMessage(message: any, webhookValue: any, requestCo
       }
     } else {
       console.log(`⚠️ Unsupported message type: ${messageType}`);
-      return;
+      return `Message type "${messageType}" is not supported yet. Please send text messages.`;
     }
 
     // Get sender name from contacts
@@ -97,10 +108,29 @@ async function processWhatsAppMessage(message: any, webhookValue: any, requestCo
 
     console.log(`👤 Processing message from ${senderName} (${fromPhone}): "${messageContent}"`);
 
-    // Handle commands first
+    // Handle commands and enhanced interactions
     if (messageContent.startsWith('/')) {
-      await handleCommand(messageContent, fromPhone, senderName, requestContext);
-      return;
+      return await handleCommand(messageContent, fromPhone, senderName, requestContext);
+    }
+    
+    // Check if this might be a session response or task reference
+    const { WhatsAppCommandSystem } = await import('../../../../lib/whatsapp-command-system');
+    const commandContext = {
+      fromPhone,
+      senderName,
+      messageContent,
+      requestContext
+    };
+    
+    // Try processing as enhanced command (could be task reference, session response, etc.)
+    try {
+      const result = await WhatsAppCommandSystem.processCommand(commandContext);
+      if (result.success || result.requiresFollowup) {
+        return result.message;
+      }
+    } catch (enhancedError) {
+      // If enhanced processing fails, continue with regular incident processing
+      console.log('📝 Not an enhanced command, processing as regular incident');
     }
 
     // Create or get WhatsApp user
@@ -155,18 +185,22 @@ async function processWhatsAppMessage(message: any, webhookValue: any, requestCo
       logSecureError('Failed to store message', requestContext, dbError instanceof Error ? dbError : undefined);
     }
 
-    // Process message for incident creation
+    // Process message for incident creation and get response
+    let responseMessage = 'Your message has been received and logged.';
     if (storedMessage) {
-      await processIncidentMessage(messageContent, fromPhone, senderName, storedMessage.id, requestContext);
+      responseMessage = await processIncidentMessage(messageContent, fromPhone, senderName, storedMessage.id, requestContext);
     }
+    
+    return responseMessage;
 
   } catch (error) {
     logSecureError('Error processing WhatsApp message', requestContext, error instanceof Error ? error : undefined);
     console.error('❌ Error in WhatsApp message processing:', error);
+    return 'Sorry, there was an error processing your message. Please try again later.';
   }
 }
 
-async function processIncidentMessage(content: string, fromPhone: string, senderName: string, messageId: string, requestContext: any) {
+async function processIncidentMessage(content: string, fromPhone: string, senderName: string, messageId: string, requestContext: any): Promise<string> {
   try {
     console.log('🤖 Starting AI processing for incident message');
     
@@ -175,7 +209,7 @@ async function processIncidentMessage(content: string, fromPhone: string, sender
     
     if (categories.length === 0) {
       console.log('⚠️ No categories available for AI parsing');
-      return;
+      return 'System configuration error. Please contact support.';
     }
 
     // Parse message using AI
@@ -212,7 +246,7 @@ async function processIncidentMessage(content: string, fromPhone: string, sender
       }
     } catch (userError) {
       console.error('❌ Error handling reporter user:', userError);
-      return;
+      return 'Error processing user information. Please try again later.';
     }
 
     // Create activity from parsed data
@@ -243,8 +277,8 @@ async function processIncidentMessage(content: string, fromPhone: string, sender
         }
       });
 
-      // Send confirmation message
-      await sendConfirmationMessage(fromPhone, activity, requestContext);
+      // Get confirmation message for TwiML response
+      const confirmationMessage = await sendConfirmationMessage(fromPhone, activity, requestContext);
 
       logSecureInfo('Activity created from WhatsApp message', requestContext, {
         activityId: activity.id,
@@ -253,49 +287,62 @@ async function processIncidentMessage(content: string, fromPhone: string, sender
         location: activity.location
       });
 
+      return confirmationMessage;
+
     } catch (activityError) {
       logSecureError('Failed to create activity from WhatsApp message', requestContext, activityError instanceof Error ? activityError : undefined);
       console.error('❌ Error creating activity:', activityError);
       
-      // Send error message to user
-      await sendErrorMessage(fromPhone, 'Failed to create activity from your message. Please try again or contact support.');
+      return 'Failed to create activity from your message. Please try again or contact support.';
     }
 
   } catch (error) {
     logSecureError('Error processing WhatsApp incident message', requestContext, error instanceof Error ? error : undefined);
     console.error('❌ Error in WhatsApp incident processing:', error);
+    return 'Sorry, there was an error processing your message. Please try again later.';
   }
 }
 
-async function handleCommand(command: string, fromPhone: string, senderName: string, requestContext: any) {
+async function handleCommand(command: string, fromPhone: string, senderName: string, requestContext: any): Promise<string> {
   try {
     console.log(`🔧 Processing WhatsApp command: ${command}`);
     
-    const cmd = command.toLowerCase().trim();
+    // Import the enhanced command system
+    const { WhatsAppCommandSystem } = await import('../../../../lib/whatsapp-command-system');
     
-    switch (cmd) {
-      case '/help':
-        await sendHelpMessage(fromPhone);
-        break;
-        
-      case '/status':
-        await sendStatusMessage(fromPhone, senderName);
-        break;
-        
-      default:
-        await sendMessage(fromPhone, `Unknown command: ${command}. Type /help for available commands.`);
-    }
+    // Create command context
+    const commandContext = {
+      fromPhone,
+      senderName,
+      messageContent: command,
+      requestContext
+    };
     
-    logSecureInfo('WhatsApp command processed', requestContext, { command: cmd });
+    // Process command through enhanced system
+    const result = await WhatsAppCommandSystem.processCommand(commandContext);
+    
+    logSecureInfo('WhatsApp enhanced command processed', requestContext, {
+      command: command.toLowerCase().trim(),
+      success: result.success
+    });
+    
+    return result.message;
   } catch (error) {
     logSecureError('Error processing WhatsApp command', requestContext, error instanceof Error ? error : undefined);
     console.error('❌ Error processing WhatsApp command:', error);
+    return 'Sorry, there was an error processing your command. Please try again or type /help for available commands.';
   }
 }
 
-async function sendConfirmationMessage(toPhone: string, activity: any, requestContext: any) {
+async function sendConfirmationMessage(toPhone: string, activity: any, requestContext: any): Promise<string> {
   try {
-    const referenceNumber = activity.id.substring(0, 8).toUpperCase();
+    // Import reference number service
+    const { generateReferenceNumber } = await import('../../../../lib/reference-number-service');
+    
+    const referenceNumber = generateReferenceNumber({
+      categoryName: activity.category?.name,
+      activityId: activity.id
+    });
     
     const message = `✅ *Incident Logged Successfully*
 
@@ -309,27 +356,31 @@ Your incident has been recorded and will be reviewed by our team. You will recei
 
 Reply /status to check all your reports.`;
 
-    await sendMessage(toPhone, message);
-    
-    logSecureInfo('WhatsApp confirmation message sent', requestContext, {
+    // Log the message but don't send via WhatsApp messaging service
+    // Instead, return the message for TwiML response
+    logSecureInfo('WhatsApp confirmation message prepared for TwiML response', requestContext, {
       toPhone: maskPhone(toPhone),
       activityId: activity.id,
       referenceNumber
     });
     
-    console.log(`✅ WhatsApp confirmation sent for activity ${activity.id}`);
+    console.log(`✅ WhatsApp confirmation prepared for TwiML response - activity ${activity.id}`);
+    return message;
   } catch (error) {
-    logSecureError('Failed to send WhatsApp confirmation message', requestContext, error instanceof Error ? error : undefined);
-    console.error('❌ Error sending WhatsApp confirmation:', error);
+    logSecureError('Failed to prepare WhatsApp confirmation message', requestContext, error instanceof Error ? error : undefined);
+    console.error('❌ Error preparing WhatsApp confirmation:', error);
+    return 'Your incident has been logged successfully. You will receive updates on progress.';
   }
 }
 
-async function sendHelpMessage(toPhone: string) {
+async function sendHelpMessage(toPhone: string): Promise<string> {
   const message = `🔧 *WhatsApp Bot Help*
 
 *Available Commands:*
 • /help - Show this help message
 • /status - Check your recent reports
+• /assigned - View your assigned tasks
+• /update - Update task progress
 
 *Reporting Issues:*
 Simply send a message describing the problem:
@@ -339,22 +390,28 @@ Simply send a message describing the problem:
 
 The system will automatically create an incident report and send you a confirmation with a reference number.
 
+*For Staff - Task Updates:*
+• Use /assigned to see your tasks
+• Use /update to provide progress updates
+• Include photos when helpful
+
 *Need more help?* Contact the school office directly.`;
 
-  await sendMessage(toPhone, message);
-  console.log(`✅ WhatsApp help message sent to ${toPhone}`);
+  console.log(`✅ WhatsApp help message prepared for TwiML response to ${maskPhone(toPhone)}`);
+  return message;
 }
 
-async function sendStatusMessage(toPhone: string, senderName: string) {
+async function sendStatusMessage(toPhone: string, senderName: string): Promise<string> {
   try {
+    const { generateReferenceNumber } = await import('../../../../lib/reference-number-service');
+    
     // Find user's recent activities
     const user = await prisma.user.findFirst({
       where: { phone_number: toPhone }
     });
 
     if (!user) {
-      await sendMessage(toPhone, "No reports found for your phone number. Send a message describing any issues to create your first report.");
-      return;
+      return "No reports found for your phone number. Send a message describing any issues to create your first report.";
     }
 
     const recentActivities = await prisma.activity.findMany({
@@ -368,33 +425,92 @@ async function sendStatusMessage(toPhone: string, senderName: string) {
     });
 
     if (recentActivities.length === 0) {
-      await sendMessage(toPhone, "No reports found. Send a message describing any issues to create your first report.");
-      return;
+      return "No reports found. Send a message describing any issues to create your first report.";
     }
 
-    let message = `📊 *Your Recent Reports*\\n\\n`;
+    let message = `📊 *Your Recent Reports*\n\n`;
     
     recentActivities.forEach((activity, index) => {
-      const ref = activity.id.substring(0, 8).toUpperCase();
-      const statusIcon = activity.status === 'Resolved' ? '✅' : 
+      const ref = generateReferenceNumber({
+        categoryName: activity.category?.name,
+        activityId: activity.id
+      });
+      const statusIcon = activity.status === 'Resolved' ? '✅' :
                         activity.status === 'In Progress' ? '🔄' : '⏳';
       
-      message += `${index + 1}. ${statusIcon} **${ref}**\\n`;
-      message += `   ${activity.subcategory} - ${activity.location}\\n`;
-      message += `   Status: ${activity.status}\\n`;
+      message += `${index + 1}. ${statusIcon} **${ref}**\n`;
+      message += `   ${activity.subcategory} - ${activity.location}\n`;
+      message += `   Status: ${activity.status}\n`;
       if (activity.assignedTo) {
-        message += `   Assigned to: ${activity.assignedTo.name}\\n`;
+        message += `   Assigned to: ${activity.assignedTo.name}\n`;
       }
-      message += `   Created: ${activity.timestamp.toLocaleDateString()}\\n\\n`;
+      message += `   Created: ${activity.timestamp.toLocaleDateString()}\n\n`;
     });
 
     message += `Reply with any new issues to create additional reports.`;
 
-    await sendMessage(toPhone, message);
-    console.log(`✅ WhatsApp status message sent to ${toPhone}`);
+    console.log(`✅ WhatsApp status message prepared for TwiML response to ${maskPhone(toPhone)}`);
+    return message;
   } catch (error) {
-    console.error('❌ Error sending WhatsApp status message:', error);
-    await sendErrorMessage(toPhone, 'Failed to retrieve your status. Please try again later.');
+    console.error('❌ Error preparing WhatsApp status message:', error);
+    return 'Failed to retrieve your status. Please try again later.';
+  }
+}
+
+async function sendAssignedTasksMessage(toPhone: string, senderName: string): Promise<string> {
+  try {
+    const { generateReferenceNumber } = await import('../../../../lib/reference-number-service');
+    
+    // Find user's assigned tasks
+    const user = await prisma.user.findFirst({
+      where: { phone_number: toPhone }
+    });
+
+    if (!user) {
+      return "No account found for your phone number. Contact your supervisor if you should have access to assigned tasks.";
+    }
+
+    // Get assigned activities
+    const assignedActivities = await prisma.activity.findMany({
+      where: {
+        assigned_to_user_id: user.id,
+        status: { in: ['Open', 'In Progress'] }
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 10,
+      include: {
+        category: { select: { name: true } },
+        user: { select: { name: true } }
+      }
+    });
+
+    if (assignedActivities.length === 0) {
+      return "📋 *No Assigned Tasks*\n\nYou currently have no open tasks assigned to you.\n\nGreat job keeping up with your work! 👍";
+    }
+
+    let message = `📋 *Your Assigned Tasks*\n\nHi ${senderName}, here are your current tasks:\n\n`;
+    
+    assignedActivities.forEach((activity, index) => {
+      const ref = generateReferenceNumber({
+        categoryName: activity.category?.name,
+        activityId: activity.id
+      });
+      const statusIcon = activity.status === 'In Progress' ? '🔄' : '⏳';
+      
+      message += `${index + 1}. ${statusIcon} **${ref}**\n`;
+      message += `   ${activity.subcategory}\n`;
+      message += `   📍 ${activity.location}\n`;
+      message += `   👤 Reported by: ${activity.user?.name}\n`;
+      message += `   📅 ${activity.timestamp.toLocaleDateString()}\n\n`;
+    });
+
+    message += `💡 *Quick Actions:*\n• Reply "/update" to update a task\n• Include photos when helpful\n• Reply "/help" for more commands`;
+
+    console.log(`✅ WhatsApp assigned tasks message prepared for ${maskPhone(toPhone)}`);
+    return message;
+  } catch (error) {
+    console.error('❌ Error preparing assigned tasks message:', error);
+    return 'Failed to retrieve your assigned tasks. Please try again later.';
   }
 }
 

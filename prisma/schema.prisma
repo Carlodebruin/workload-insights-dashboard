@@ -19,6 +19,8 @@ model User {
   updates      ActivityUpdate[]
   assignedActivities Activity[] @relation("AssignedTo")
   whatsappUsers WhatsAppUser[] // Relation to WhatsApp users
+  activityAssignments ActivityAssignment[] @relation("ActivityAssignments") // NEW: Multi-user assignments
+  assignmentsMade     ActivityAssignment[] @relation("AssignmentsMade") // NEW: Assignments created by user
 
   // Indexes for performance optimization
   @@index([role], name: "idx_user_role")
@@ -65,6 +67,7 @@ model Activity {
   assignedTo   User? @relation("AssignedTo", fields: [assigned_to_user_id], references: [id])
   updates      ActivityUpdate[]
   whatsappMessages WhatsAppMessage[] // Relation to WhatsApp messages
+  assignments  ActivityAssignment[] // NEW: Multi-user assignments
 
   // Indexes for performance optimization
   @@index([user_id], name: "idx_activity_user")
@@ -260,4 +263,31 @@ model WhatsAppConfig {
   @@index([key], name: "idx_wa_config_key")
   @@index([isActive], name: "idx_wa_config_active")
   @@map("whatsapp_config")
+}
+
+// Multi-user assignment junction table - ADDITIVE SCHEMA ONLY
+model ActivityAssignment {
+  id                   String   @id @default(cuid())
+  activity_id          String
+  user_id              String
+  assigned_at          DateTime @default(now())
+  assigned_by          String
+  assignment_type      String   @default("primary") // "primary", "secondary", "observer"
+  status               String   @default("active") // "active", "completed", "removed"
+  role_instructions    String?
+  receive_notifications Boolean @default(true)
+  
+  // Relations
+  activity            Activity @relation(fields: [activity_id], references: [id], onDelete: Cascade)
+  assignedUser        User @relation("ActivityAssignments", fields: [user_id], references: [id])
+  assignedByUser      User @relation("AssignmentsMade", fields: [assigned_by], references: [id])
+  
+  // Constraints
+  @@unique([activity_id, user_id], name: "unique_activity_user_assignment")
+  @@index([activity_id], name: "idx_assignment_activity")
+  @@index([user_id], name: "idx_assignment_user")
+  @@index([assignment_type], name: "idx_assignment_type")
+  @@index([status], name: "idx_assignment_status")
+  @@index([assigned_at], name: "idx_assignment_timestamp")
+  @@map("activity_assignments")
 }

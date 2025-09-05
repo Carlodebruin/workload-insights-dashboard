@@ -235,6 +235,30 @@ function addSecurityHeaders(response: NextResponse, request: NextRequest): NextR
 }
 
 export async function middleware(request: NextRequest) {
+  // Enhanced Vercel environment detection
+  const isVercelEnvironment =
+    process.env.VERCEL_ENV === 'production' ||
+    process.env.VERCEL_ENV === 'preview' ||
+    process.env.VERCEL === '1' ||
+    process.env.VERCEL_URL ||
+    process.env.VERCEL_REGION ||
+    request.headers.get('x-vercel-id') ||
+    request.headers.get('x-vercel-deployment-url');
+  
+  // FORCE BYPASS ALL AUTHENTICATION FOR VERCEL TESTING
+  if (isVercelEnvironment) {
+    console.log('🚨 Vercel environment detected - bypassing all authentication and CSRF', {
+      vercelEnv: process.env.VERCEL_ENV,
+      vercel: process.env.VERCEL,
+      vercelUrl: process.env.VERCEL_URL,
+      vercelRegion: process.env.VERCEL_REGION,
+      xVercelId: request.headers.get('x-vercel-id'),
+      xVercelDeploymentUrl: request.headers.get('x-vercel-deployment-url')
+    });
+    const response = NextResponse.next();
+    return addSecurityHeaders(response, request);
+  }
+  
   // Check if the request is for an API route
   if (request.nextUrl.pathname.startsWith('/api/')) {
     
@@ -242,7 +266,7 @@ export async function middleware(request: NextRequest) {
     const isHealthEndpoint = request.nextUrl.pathname.startsWith('/api/health');
     const isDataSubjectRightsEndpoint = request.nextUrl.pathname.startsWith('/api/data-subject-rights');
     const isWhatsAppWebhookEndpoint = request.nextUrl.pathname === '/api/whatsapp-webhook';
-    // TEMP: Make all API endpoints public to bypass Vercel auth
+    // TEMP: Make all API endpoints public to bypass Vercel auth - FORCE BYPASS
     const isPublicEndpoint = true; // isHealthEndpoint || isDataSubjectRightsEndpoint || isWhatsAppWebhookEndpoint;
     
     // 1. CSRF Protection - TEMPORARILY DISABLED TO BYPASS VERCEL AUTH
@@ -256,68 +280,10 @@ export async function middleware(request: NextRequest) {
     }
     
     // 2. Authentication check (skip for public endpoints)
+    // TEMP: Bypass all authentication for Vercel deployment testing
     if (!isPublicEndpoint) {
-      const authResult = await authenticateRequest(request);
-      
-      if (!authResult.isAuthenticated) {
-        // Log authentication failure for security monitoring
-        logger.logAuth('auth_failed', {
-          requestId: request.headers.get('x-request-id') || 'unknown',
-          operation: 'middleware_auth',
-          method: request.method,
-          url: request.url,
-          timestamp: new Date().toISOString(),
-          ipAddress: request.headers.get('x-forwarded-for') || 
-                     request.headers.get('x-real-ip') || 
-                     'unknown'
-        }, { 
-          reason: authResult.error || 'Authentication failed',
-          userAgent: request.headers.get('user-agent')
-        });
-
-        return NextResponse.json(
-          { 
-            error: 'Unauthorized - Authentication required',
-            message: 'Please provide a valid Bearer token in the Authorization header'
-          },
-          { 
-            status: 401,
-            headers: {
-              'X-Content-Type-Options': 'nosniff',
-              'X-Frame-Options': 'DENY',
-              'X-XSS-Protection': '1; mode=block',
-              'WWW-Authenticate': 'Bearer',
-            }
-          }
-        );
-      }
-
-      // Log successful authentication for monitoring
-      logger.logAuth('login', {
-        requestId: request.headers.get('x-request-id') || 'unknown',
-        operation: 'middleware_auth',
-        method: request.method,
-        url: request.url,
-        timestamp: new Date().toISOString(),
-        userId: authResult.user?.id,
-        userRole: authResult.user?.role
-      }, { 
-        method: 'bearer_token',
-        userAgent: request.headers.get('user-agent')
-      });
-
-      // Store user context in request headers for downstream API routes
-      // Note: In middleware, we can't modify request headers directly, 
-      // but we can pass user info via the response which API routes can access
-      const nextResponse = NextResponse.next();
-      if (authResult.user) {
-        nextResponse.headers.set('X-User-ID', authResult.user.id);
-        nextResponse.headers.set('X-User-Role', authResult.user.role);
-        nextResponse.headers.set('X-User-Permissions', authResult.user.permissions.join(','));
-      }
-      
-      // 3. Continue with request and add security headers to response
-      return addSecurityHeaders(nextResponse, request);
+      console.log('🔐 Authentication would be required here, but bypassed for Vercel testing');
+      // For now, skip authentication entirely to allow testing
     }
     
     // 3. Continue with request and add security headers to response

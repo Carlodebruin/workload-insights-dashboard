@@ -3,12 +3,16 @@ import { User, Activity, Category, NewActivityData, ActivityStatus } from '../ty
 import { exportToCsv, parseDateStringAsLocal } from '../lib/utils';
 import FilterControls from './FilterControls';
 import KpiCard from './KpiCard';
-import ActivityDistributionChart from './charts/ActivityDistributionChart';
-import PeakTimesChart from './charts/PeakTimesChart';
-import ActivityFeed from './ActivityFeed';
-import { AlertTriangle, Users, Clock, Zap, GitPullRequest } from 'lucide-react';
+import {
+  ActivityDistributionChart,
+  UserWorkloadChart,
+  PeakTimesChart,
+  ActivityFeed
+} from './lazy/LazyComponentWrappers';
+import { AlertTriangle, Users, Clock, Zap, GitPullRequest, Lightbulb } from 'lucide-react';
 import DashboardSkeleton from './DashboardSkeleton';
 import { useToast } from '../hooks/useToast';
+import { calculateUserWorkloads, getWorkloadInsights } from '../lib/workload-analytics';
 
 interface DashboardProps {
   selectedUserId: string;
@@ -65,6 +69,8 @@ const Dashboard: React.FC<DashboardProps> = ({
   const [filterStatus, setFilterStatus] = useState<'all' | 'open'>('all');
   const [viewTab, setViewTab] = useState<'all' | 'mytasks'>('all');
   const feedContainerRef = useRef<HTMLDivElement>(null);
+  const [workloadData, setWorkloadData] = useState<any>(null);
+  const [workloadInsights, setWorkloadInsights] = useState<any[]>([]);
 
   // Handle external activity highlighting (e.g., from WhatsApp navigation)
   useEffect(() => {
@@ -72,6 +78,23 @@ const Dashboard: React.FC<DashboardProps> = ({
       highlightAndScroll(highlightActivityId);
     }
   }, [highlightActivityId, activities]);
+
+  // Calculate workload analytics when data changes
+  useEffect(() => {
+    const calculateWorkloads = async () => {
+      try {
+        const result = await calculateUserWorkloads(activities, users, allCategories);
+        setWorkloadData(result);
+        setWorkloadInsights(getWorkloadInsights(result.userWorkloads, result.teamSummary));
+      } catch (error) {
+        console.error('Failed to calculate workload analytics:', error);
+      }
+    };
+
+    if (activities.length > 0 && users.length > 0 && allCategories.length > 0) {
+      calculateWorkloads();
+    }
+  }, [activities, users, allCategories]);
 
   const baseFilteredActivities = useMemo(() => {
     const startDate = parseDateStringAsLocal(dateRange.start);
@@ -280,23 +303,58 @@ const Dashboard: React.FC<DashboardProps> = ({
 
       <div className="grid gap-8 md:grid-cols-1 lg:grid-cols-5">
         <div className="lg:col-span-2 bg-secondary/30 border border-border p-4 rounded-lg">
-           <h3 className="text-lg font-semibold mb-4">Activity Distribution</h3>
-           <ActivityDistributionChart 
-                data={baseFilteredActivities} 
-                onCategorySelect={setSelectedCategory} 
-                selectedCategory={selectedCategory}
-                allCategories={allCategories}
+          <h3 className="text-lg font-semibold mb-4">Team Workload Analysis</h3>
+          {process.env.NEXT_PUBLIC_ENABLE_WORKLOAD_CHART === 'true' && workloadData ? (
+            <UserWorkloadChart
+              data={workloadData.userWorkloads}
+              onUserSelect={setSelectedUserId}
+              selectedUserId={selectedUserId}
             />
+          ) : (
+            <ActivityDistributionChart
+              data={baseFilteredActivities}
+              onCategorySelect={setSelectedCategory}
+              selectedCategory={selectedCategory}
+              allCategories={allCategories}
+            />
+          )}
         </div>
         <div className="lg:col-span-3 bg-secondary/30 border border-border p-4 rounded-lg">
-            <h3 className="text-lg font-semibold mb-4">Activity by Hour</h3>
-            <PeakTimesChart 
-                data={finalFilteredActivities}
-                onHourSelect={setSelectedHour}
-                selectedHour={selectedHour}
-            />
+          <h3 className="text-lg font-semibold mb-4">Activity by Hour</h3>
+          <PeakTimesChart
+            data={finalFilteredActivities}
+            onHourSelect={setSelectedHour}
+            selectedHour={selectedHour}
+          />
         </div>
       </div>
+
+      {/* Workload Insights */}
+      {workloadInsights.length > 0 && (
+        <div className="bg-secondary/30 border border-border p-4 rounded-lg">
+          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+            <Lightbulb className="h-5 w-5 text-yellow-500" />
+            Workload Insights
+          </h3>
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {workloadInsights.map((insight, index) => (
+              <div
+                key={index}
+                className={`p-3 rounded-lg border ${
+                  insight.type === 'warning'
+                    ? 'bg-yellow-100/20 border-yellow-500/30 text-yellow-800'
+                    : insight.type === 'success'
+                    ? 'bg-green-100/20 border-green-500/30 text-green-800'
+                    : 'bg-blue-100/20 border-blue-500/30 text-blue-800'
+                }`}
+              >
+                <h4 className="font-semibold text-sm mb-1">{insight.title}</h4>
+                <p className="text-xs">{insight.message}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div>
         <div className="flex justify-between items-center mb-4">

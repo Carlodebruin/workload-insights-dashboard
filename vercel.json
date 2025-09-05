@@ -1,0 +1,28 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "/app/api/$1",
+      "methods": ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"]
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/app/$1"
+    }
+  ],
+  "env": {
+    "ENABLE_ISR": "1"
+  },
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "installCommand": "npm install",
+  "framework": "nextjs",
+  "outputDirectory": ".next"
+}

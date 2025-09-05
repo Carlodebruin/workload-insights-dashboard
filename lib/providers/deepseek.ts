@@ -943,8 +943,8 @@ export class DeepSeekProvider implements AIProvider {
     let success = false;
     let errorType: string | undefined;
 
-    // Pre-flight rate limiting check
-    const maxTokens = options?.maxTokens || 1000;
+    // Pre-flight rate limiting check with consistent token calculation
+    const maxTokens = options?.maxTokens || 800; // Use the provided maxTokens or default to 800
     const fullPrompt = (options?.systemInstruction ? options.systemInstruction + '\n\n' : '') + prompt;
     const estimatedTokens = this.estimateTokenCount(fullPrompt) + maxTokens;
     const estimatedCost = this.estimateRequestCost(fullPrompt, maxTokens);
@@ -982,7 +982,7 @@ export class DeepSeekProvider implements AIProvider {
     const requestBody = {
       model: 'deepseek-chat',
       messages,
-      max_tokens: Math.min(options?.maxTokens || 1000, 1000), // Cap at 1000 tokens to prevent runaway responses
+      max_tokens: options?.maxTokens || 800, // Use the provided maxTokens or default to 800
       temperature: options?.temperature || 0.7,
       ...(options?.responseFormat === 'json' && { 
         response_format: { type: 'json_object' }
@@ -1103,7 +1103,7 @@ export class DeepSeekProvider implements AIProvider {
     let errorType: string | undefined;
 
     // Pre-flight rate limiting check for streaming
-    const maxTokens = Math.min(options?.maxTokens || 1000, 1000); // Cap at 1000 tokens consistently
+    const maxTokens = options?.maxTokens || 800; // Use the provided maxTokens or default to 800
     const fullContent = (options?.systemInstruction || '') + messages.map(m => m.content).join('\n');
     const estimatedTokens = this.estimateTokenCount(fullContent) + maxTokens;
     const estimatedCost = this.estimateRequestCost(fullContent, maxTokens);
@@ -1144,7 +1144,7 @@ export class DeepSeekProvider implements AIProvider {
     const requestBody = {
       model: 'deepseek-chat',
       messages: openaiMessages,
-      max_tokens: Math.min(options?.maxTokens || 1000, 1000), // Cap at 1000 tokens for streaming too
+      max_tokens: options?.maxTokens || 800, // Use the provided maxTokens or default to 800
       temperature: options?.temperature || 0.7,
       stream: true,
     };

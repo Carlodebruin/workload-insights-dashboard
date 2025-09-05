@@ -111,8 +111,12 @@ export async function notifyStaffAssignment(
       return { success: false, error };
     }
 
-    // Create reference number for tracking
-    const referenceNumber = `${activity.category?.name?.substring(0, 4).toUpperCase() || 'TASK'}-${activity.id.slice(-4)}`;
+    // Create reference number using the reference service
+    const { generateReferenceNumber } = require('./reference-number-service');
+    const referenceNumber = generateReferenceNumber({
+      categoryName: activity.category?.name,
+      activityId: activity.id
+    });
     
     // Build notification message
     const notificationMessage = buildStaffNotificationMessage(
@@ -221,7 +225,11 @@ export async function notifyActivityUpdate(
       return result;
     }
 
-    const referenceNumber = `${activity.category.name.substring(0, 4).toUpperCase()}-${activity.id.slice(-4)}`;
+    const { generateReferenceNumber } = require('./reference-number-service');
+    const referenceNumber = generateReferenceNumber({
+      categoryName: activity.category?.name,
+      activityId: activity.id
+    });
     const updateAuthor = activity.user.id === updateAuthorId ? activity.user : 
                         activity.assignedTo?.id === updateAuthorId ? activity.assignedTo : null;
 
@@ -320,7 +328,11 @@ export async function notifyStatusChange(
       return result;
     }
 
-    const referenceNumber = `${activity.category.name.substring(0, 4).toUpperCase()}-${activity.id.slice(-4)}`;
+    const { generateReferenceNumber } = require('./reference-number-service');
+    const referenceNumber = generateReferenceNumber({
+      categoryName: activity.category?.name,
+      activityId: activity.id
+    });
     
     let statusMessage = `📊 *Status Update: ${referenceNumber}*\n\n🏷️ **Task:** ${activity.subcategory}\n📍 **Location:** ${activity.location}\n📈 **Status:** ${oldStatus} → **${newStatus}**\n⏰ **Updated:** ${new Date().toLocaleString()}\n\n`;
 

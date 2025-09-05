@@ -1,13 +1,17 @@
 import { NextResponse } from 'next/server';
 import { getWorkingAIProvider, getFallbackStatistics } from '../../../lib/ai-factory';
 import { DeepSeekProvider } from '../../../lib/providers/deepseek';
+import { prisma } from '../../../lib/prisma';
+import { logger } from '../../../lib/logger';
 
 export async function GET() {
   try {
+    const startTime = Date.now();
     const diagnostics: any = {
       timestamp: new Date().toISOString(),
       aiProvider: null,
-      contextCaching: null
+      contextCaching: null,
+      requestId: `diag-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
     };
 
     // Get current AI provider information
@@ -123,12 +127,48 @@ export async function GET() {
                     fallbackStats.totalFallbacks < 5 ? 'good' :
                     fallbackStats.totalFallbacks < 20 ? 'fair' : 'needs attention',
         fallbackSpeed: 'Target: < 3 seconds',
-        recommendations: fallbackStats.totalFallbacks > 10 
+        recommendations: fallbackStats.totalFallbacks > 10
           ? ['High number of fallbacks detected - investigate primary provider reliability']
           : fallbackStats.deepSeekFallbacks > 5
           ? ['Multiple DeepSeek fallbacks - consider checking API limits and credentials']
           : ['Fallback system operating within normal parameters']
       }
+    };
+
+    // Add database performance metrics
+    try {
+      const dbStats = await prisma.$queryRaw`
+        SELECT
+          COUNT(*) as total_activities,
+          COUNT(CASE WHEN status = 'Open' THEN 1 END) as open_activities,
+          COUNT(CASE WHEN status = 'In Progress' THEN 1 END) as in_progress_activities,
+          COUNT(CASE WHEN status = 'Resolved' THEN 1 END) as resolved_activities,
+          COUNT(DISTINCT user_id) as active_users,
+          COUNT(DISTINCT category_id) as active_categories,
+          MAX(timestamp) as latest_activity,
+          MIN(timestamp) as earliest_activity
+        FROM activities
+      `;
+
+      diagnostics.database = {
+        performance: Array.isArray(dbStats) ? dbStats[0] : dbStats,
+        health: 'healthy',
+        timestamp: new Date().toISOString()
+      };
+    } catch (dbError) {
+      diagnostics.database = {
+        health: 'unhealthy',
+        error: dbError instanceof Error ? dbError.message : 'Unknown database error',
+        timestamp: new Date().toISOString()
+      };
+    }
+
+    // Add API performance metrics
+    diagnostics.apiPerformance = {
+      responseTime: Date.now() - startTime,
+      dataRetrievalTime: diagnostics.database?.performance ? Date.now() - startTime : null,
+      memoryUsage: process.memoryUsage().heapUsed / 1024 / 1024, // MB
+      environment: process.env.NODE_ENV || 'development'
     };
 
     return NextResponse.json(diagnostics);

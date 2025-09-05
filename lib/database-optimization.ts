@@ -1,4 +1,6 @@
 import { PrismaClient } from '@prisma/client';
+import { OptimizedQueries } from './optimized-queries';
+import { performanceMonitor, PerformanceMonitor } from './performance-monitor';
 
 // Database optimization configurations
 export const optimizedPrismaConfig = {
@@ -18,15 +20,19 @@ export const optimizedPrismaConfig = {
       connectionLimit: 10,
       // Query timeout
       queryTimeout: 10000,
-      // Connection timeout  
+      // Connection timeout
       connectionTimeout: 5000,
     }
   }
 };
 
-// Optimized query helpers
-export const optimizedQueries = {
-  // Get activities with minimal data for lists
+// Export the new optimized queries
+export { OptimizedQueries as optimizedQueries };
+export { performanceMonitor };
+
+// Legacy optimized query helpers (maintained for backward compatibility)
+export const legacyOptimizedQueries = {
+  // Get activities with minimal data for lists (optimized for performance)
   getActivitiesLite: async (prisma: PrismaClient, page: number = 1, limit: number = 20) => {
     const offset = (page - 1) * limit;
     
@@ -59,6 +65,49 @@ export const optimizedQueries = {
               name: true
             }
           }
+        }
+      }),
+      prisma.activity.count()
+    ]);
+    
+    return {
+      activities,
+      totalCount,
+      pagination: {
+        currentPage: page,
+        totalPages: Math.ceil(totalCount / limit),
+        totalRecords: totalCount,
+        pageSize: limit,
+        hasNextPage: page < Math.ceil(totalCount / limit),
+        hasPreviousPage: page > 1
+      }
+    };
+  },
+
+  // Get activities with absolute minimal data (fastest possible)
+  getActivitiesMinimal: async (prisma: PrismaClient, page: number = 1, limit: number = 20) => {
+    const offset = (page - 1) * limit;
+    
+    const [activities, totalCount] = await Promise.all([
+      prisma.activity.findMany({
+        skip: offset,
+        take: limit,
+        orderBy: { timestamp: 'desc' },
+        select: {
+          id: true,
+          user_id: true,
+          category_id: true,
+          subcategory: true,
+          location: true,
+          timestamp: true,
+          status: true,
+          assigned_to_user_id: true,
+          notes: true,
+          photo_url: true,
+          latitude: true,
+          longitude: true,
+          assignment_instructions: true,
+          resolution_notes: true,
         }
       }),
       prisma.activity.count()
@@ -278,47 +327,16 @@ export const optimizedQueries = {
   }
 };
 
-// Performance monitoring helpers
-export const performanceMonitor = {
-  // Measure query execution time
-  measureQuery: async <T>(queryName: string, queryFn: () => Promise<T>): Promise<T> => {
-    const startTime = Date.now();
-    try {
-      const result = await queryFn();
-      const duration = Date.now() - startTime;
-      
-      if (duration > 1000) {
-        console.warn(`⚠️ Slow query detected: ${queryName} took ${duration}ms`);
-      } else if (duration > 500) {
-        console.log(`🔍 Query performance: ${queryName} took ${duration}ms`);
-      }
-      
-      return result;
-    } catch (error) {
-      const duration = Date.now() - startTime;
-      console.error(`❌ Query failed: ${queryName} after ${duration}ms:`, error);
-      throw error;
-    }
-  },
-
-  // Database health check with timeout
+// Legacy performance monitoring (maintained for backward compatibility)
+export const legacyPerformanceMonitor = {
+  measureQuery: performanceMonitor.measureQuery.bind(performanceMonitor),
   checkDatabaseHealth: async (prisma: PrismaClient, timeoutMs: number = 5000): Promise<boolean> => {
-    const timeoutPromise = new Promise<boolean>((_, reject) => {
-      setTimeout(() => reject(new Error('Database health check timeout')), timeoutMs);
-    });
-
-    const healthPromise = prisma.$queryRaw`SELECT 1 as health`.then(() => true);
-
-    try {
-      return await Promise.race([healthPromise, timeoutPromise]);
-    } catch (error) {
-      console.error('Database health check failed:', error);
-      return false;
-    }
+    const result = await performanceMonitor.checkDatabaseHealth(prisma, timeoutMs);
+    return result.healthy;
   }
 };
 
-// Cache helpers for frequently accessed data
+// Cache helpers for frequently accessed data (unchanged)
 export const cacheHelpers = {
   // In-memory cache for categories (rarely change)
   categoriesCache: new Map<string, any>(),

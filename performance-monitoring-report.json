@@ -1,0 +1,54 @@
+{
+  "timestamp": "2025-09-04T03:32:35.872Z",
+  "metrics": {
+    "apiPerformance": {
+      "assignmentEndpoints": {
+        "/api/activities/test/assignments": {
+          "responseTime": 1065,
+          "status": 400,
+          "success": false
+        },
+        "/api/activities/test/assignments/test": {
+          "responseTime": 1950,
+          "status": 400,
+          "success": false
+        }
+      },
+      "responseTimes": [
+        1065,
+        1950
+      ],
+      "errorRates": [
+        {
+          "endpoint": "/api/activities",
+          "error": "timeout of 5000ms exceeded"
+        }
+      ]
+    },
+    "userEngagement": {
+      "assignmentOperations": 0,
+      "multiUserAssignments": 0,
+      "realTimeUpdates": 0
+    },
+    "systemHealth": {
+      "databaseConnections": 9,
+      "memoryUsage": 9,
+      "uptime": 15
+    },
+    "mobileOptimization": {
+      "touchTargetUsage": 14,
+      "mobileResponsiveness": 43,
+      "performanceScore": 0
+    }
+  },
+  "summary": {
+    "overallHealth": 26,
+    "recommendations": [
+      "Optimize API response times - target <500ms",
+      "Investigate API error rates and implement retry logic",
+      "Promote multi-user assignment feature to increase adoption",
+      "Enhance real-time update visibility and user notifications",
+      "Optimize mobile performance through code splitting and lazy loading"
+    ]
+  }
+}

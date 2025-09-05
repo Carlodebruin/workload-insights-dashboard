@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobile Touch Test</title>
+    <style>
+        .min-h-touch { min-height: 44px; }
+        .min-w-touch { min-width: 44px; }
+        .touch-target {
+            background-color: #007bff;
+            color: white;
+            padding: 12px;
+            margin: 10px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .test-container {
+            padding: 20px;
+            font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>Mobile Touch Target Test</h1>
+        <p>Test the 44px minimum touch targets:</p>
+        
+        <div class="touch-target min-h-touch min-w-touch">
+            Touch Target (44px min)
+        </div>
+        
+        <div style="margin-top: 20px;">
+            <p>Verify these targets meet WCAG 2.2 accessibility standards for touch interfaces.</p>
+        </div>
+    </div>
+</body>
+</html>

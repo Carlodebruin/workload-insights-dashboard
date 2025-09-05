@@ -4,6 +4,7 @@ import { prisma } from '../../../lib/prisma';
 import { validateBody, validateQuery, newActivitySchema, paginationSchema } from '../../../lib/validation';
 import { logSecureError, logSecureInfo, createRequestContext, extractSafeUserId } from '../../../lib/secure-logger';
 import { optimizedQueries, performanceMonitor } from '../../../lib/database-optimization';
+import { eventPublisher } from '../../../lib/event-publisher-service';
 import type { Activity, ActivityUpdate } from '@prisma/client';
 
 // Type for Activity with included updates
@@ -48,31 +49,32 @@ export async function GET(request: NextRequest) {
       undefined
     );
 
-    // Fetch activities with optimized query
+    // Fetch activities with optimized query - minimal data for listing
     const result = await performanceMonitor.measureQuery(
       'fetch_activities_paginated',
-      () => optimizedQueries.getActivitiesLite(prisma, page, limit)
+      () => optimizedQueries.getActivitiesMinimal(prisma, page, limit)
     );
 
     const { activities, pagination } = result;
 
     // Convert Date objects to ISO strings for JSON serialization
     const serializedActivities = activities.map((activity) => ({
-      ...activity,
+      id: activity.id,
+      user_id: activity.user_id,
+      category_id: activity.category_id,
+      subcategory: activity.subcategory,
+      location: activity.location,
       timestamp: activity.timestamp.toISOString(),
-      // Add user_id and category_id for backward compatibility
-      user_id: activity.user.id,
-      category_id: activity.category.id,
-      // Add assigned_to_user_id for backward compatibility  
-      assigned_to_user_id: activity.assignedTo?.id || null,
-      // Add empty fields for backward compatibility
-      notes: '',
-      photo_url: null,
-      latitude: null,
-      longitude: null,
-      assignment_instructions: null,
-      resolution_notes: null,
-      updates: []
+      status: activity.status,
+      assigned_to_user_id: activity.assigned_to_user_id,
+      // Minimal fields only for listing view
+      notes: activity.notes || '',
+      photo_url: activity.photo_url,
+      latitude: activity.latitude,
+      longitude: activity.longitude,
+      assignment_instructions: activity.assignment_instructions,
+      resolution_notes: activity.resolution_notes,
+      // No updates or user details for listing performance
     }));
 
     const responseData = {
@@ -188,6 +190,17 @@ export async function POST(request: Request) {
       activityId: newActivity.id,
       statusCode: 201,
     });
+
+    // Broadcast real-time event for activity creation
+    try {
+      await eventPublisher.broadcastActivityCreated(newActivity.id);
+    } catch (broadcastError) {
+      // Don't fail the request if broadcasting fails
+      logSecureError('Failed to broadcast activity creation event',
+        createRequestContext('broadcast_activity_created', 'POST', undefined, newActivity.id, undefined),
+        broadcastError instanceof Error ? broadcastError : undefined
+      );
+    }
 
     return NextResponse.json(serializedActivity, { status: 201 });
   } catch (error) {
